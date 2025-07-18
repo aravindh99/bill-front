@@ -107,6 +107,161 @@ const DeliveryChalans = () => {
     );
   };
 
+  const handlePrintDeliveryChalan = async (chalanId) => {
+    try {
+      console.log('Attempting to print Delivery Chalan...', chalanId);
+      const chalanResponse = await axios.get(`/delivery-chalans/${chalanId}`);
+      const chalan = chalanResponse.data;
+
+      const profileResponse = await axios.get('/profiles'); // Fetch company profile
+      const companyProfile = profileResponse.data.length > 0 ? profileResponse.data[0] : {};
+
+      if (!chalan) {
+        showErrorModal('Error', 'Delivery Chalan not found for printing', 'error');
+        return;
+      }
+
+      // Assuming items are part of the chalan or can be fetched based on invoiceId if available
+      // For now, if chalan doesn't have an items array directly, we'll use an empty one.
+      // If items need to be fetched via invoiceId, that logic would go here.
+      const chalanItems = chalan.invoice?.items || []; // Link to invoice items if associated
+
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        showErrorModal('Error', 'Please allow pop-ups for printing', 'error');
+        return;
+      }
+
+      // Format currency helper (assuming it's available globally or imported/defined elsewhere)
+      const formatCurrency = (amount) => {
+        return new Intl.NumberFormat('en-IN', {
+          style: 'currency',
+          currency: 'INR'
+        }).format(amount || 0);
+      };
+
+      const deliveryChalanHtml = `
+        <html>
+          <head>
+            <title>Delivery Chalan #${chalan.docNo}</title>
+            <style>
+              body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; }
+              .chalan-page { width: 210mm; min-height: 297mm; margin: 10mm auto; border: 1px solid #eee; background: #fff; padding: 20mm; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
+              .header-section { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
+              .company-info h1 { margin: 0; font-size: 28px; color: #333; }
+              .company-info p { margin: 2px 0; font-size: 14px; color: #555; }
+              .chalan-title { font-size: 40px; font-weight: bold; color: #333; margin-top: 0; }
+              .chalan-meta { margin-top: 10px; text-align: right; font-size: 14px; }
+              .chalan-meta div { margin-bottom: 5px; }
+
+              .address-section { display: flex; justify-content: space-between; margin-bottom: 30px; }
+              .address-box { border: 1px solid #eee; padding: 15px; width: 48%; }
+              .address-box h3 { margin-top: 0; font-size: 16px; color: #333; }
+              .address-box p { margin: 2px 0; font-size: 14px; color: #555; }
+
+              .item-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+              .item-table th, .item-table td { border: 1px solid #eee; padding: 10px; text-align: left; font-size: 14px; }
+              .item-table th { background-color: #f9f9f9; font-weight: bold; color: #333; }
+
+              .notes-section { font-size: 13px; color: #555; margin-bottom: 30px; }
+              .footer-section { text-align: center; font-size: 12px; color: #777; border-top: 1px solid #eee; padding-top: 15px; }
+              @media print {
+                .chalan-page { box-shadow: none; border: none; }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="chalan-page">
+              <div class="header-section">
+                <div class="company-info">
+                  ${companyProfile.logo ? `<img src="${companyProfile.logo}" alt="Company Logo" style="height: 60px; margin-bottom: 10px;"/>` : ''}
+                  <h1>${companyProfile.companyName || 'Your Company Name'}</h1>
+                  <p>${companyProfile.address || 'Your Company Address'}</p>
+                  <p>${companyProfile.city || 'City'}, ${companyProfile.state || 'State'} ${companyProfile.pinCode || 'PIN'}</p>
+                  <p>Email: ${companyProfile.email || 'N/A'} | Phone: ${companyProfile.phone || 'N/A'}</p>
+                  ${companyProfile.website ? `<p>Website: ${companyProfile.website}</p>` : ''}
+                  ${companyProfile.serviceTaxNo ? `<p>Service Tax No: ${companyProfile.serviceTaxNo}</p>` : ''}
+                </div>
+                <div>
+                  <h2 class="chalan-title">DELIVERY CHALAN</h2>
+                  <div class="chalan-meta">
+                    <div><strong>Chalan No:</strong> ${chalan.docNo}</div>
+                    <div><strong>Chalan Date:</strong> ${new Date(chalan.chalanDate).toLocaleDateString()}</div>
+                    ${chalan.invoice ? `<div><strong>Invoice No:</strong> ${chalan.invoice.invoiceNo}</div>` : ''}
+                  </div>
+                </div>
+              </div>
+
+              <div class="address-section">
+                <div class="address-box">
+                  <h3>Deliver To:</h3>
+                  <p><strong>${chalan.client?.companyName || 'Client Name'}</strong></p>
+                  <p>${chalan.client?.shippingAddress || 'Client Address'}</p>
+                  <p>${chalan.client?.city || 'City'}, ${chalan.client?.state || 'State'} ${chalan.client?.pinCode || 'PIN'}</p>
+                  <p>Email: ${chalan.client?.email || 'N/A'}</p>
+                  <p>Phone: ${chalan.client?.phone || 'N/A'}</p>
+                </div>
+                <div class="address-box">
+                  <h3>Bill To:</h3>
+                  <p><strong>${chalan.client?.companyName || 'Client Name'}</strong></p>
+                  <p>${chalan.client?.billingAddress || 'Client Address'}</p>
+                  <p>${chalan.client?.city || 'City'}, ${chalan.client?.state || 'State'} ${chalan.client?.pinCode || 'PIN'}</p>
+                </div>
+              </div>
+
+              <table class="item-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Item & Description</th>
+                    <th>Qty</th>
+                    <th>Unit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${(chalanItems || []).map((item, index) => `
+                    <tr>
+                      <td>${index + 1}</td>
+                      <td>
+                        <strong>${item.name || 'N/A'}</strong><br/>
+                        <span style="font-size: 12px; color: #777;">${item.description || ''}</span>
+                      </td>
+                      <td>${item.quantity}</td>
+                      <td>${item.unit}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+
+              ${chalan.notes ? `<div class="notes-section">
+                <strong>Notes:</strong>
+                <p>${chalan.notes}</p>
+              </div>` : ''}
+
+              <div class="footer-section">
+                <p>${companyProfile.companyName || 'Your Company Name'} | ${companyProfile.address || 'Your Company Address'}</p>
+                <p>Email: ${companyProfile.email || 'N/A'} | Phone: ${companyProfile.phone || 'N/A'} | Website: ${companyProfile.website || 'N/A'}</p>
+                ${companyProfile.bankDetails && companyProfile.bankDetails.length > 0 ? `
+                  <p>Bank: ${companyProfile.bankDetails[0].bankName} | A/C No: ${companyProfile.bankDetails[0].accountNumber} | IFSC: ${companyProfile.bankDetails[0].ifscCode}</p>
+                ` : ''}
+                <p>Thank you for your business!</p>
+              </div>
+            </div>
+          </body>
+        </html>
+      `;
+
+      printWindow.document.write(deliveryChalanHtml);
+      printWindow.document.close();
+      printWindow.focus();
+      printWindow.print();
+
+    } catch (error) {
+      console.error('Error printing Delivery Chalan:', error);
+      showErrorModal('Error', getErrorMessage(error, 'Failed to print Delivery Chalan'), getErrorType(error));
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     console.log('Submitting chalan data:', formData);
@@ -202,12 +357,12 @@ const DeliveryChalans = () => {
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Chalan #</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Client</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Date</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Invoice</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Notes</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Actions</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Chalan #</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Client</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Date</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Invoice</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Notes</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -232,7 +387,19 @@ const DeliveryChalans = () => {
                           >
                             ✏️
                           </button>
-                          <button className="text-green-600 hover:text-green-800">📄</button>
+                          <button 
+                            className="text-green-600 hover:text-green-800 p-2 rounded hover:bg-green-50 transition-colors"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handlePrintDeliveryChalan(chalan.id);
+                            }}
+                            type="button"
+                            title="Print Delivery Chalan"
+                            aria-label="Print Delivery Chalan"
+                          >
+                            📄
+                          </button>
                           <button
                             onClick={() => {
                               console.log('Delete button clicked for chalan ID:', chalan.id);
@@ -251,7 +418,7 @@ const DeliveryChalans = () => {
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500">
-              <span className="text-4xl mb-4 block">🚚</span>
+              <span className="text-4xl mb-4 block"></span>
               <p>No delivery chalans found</p>
             </div>
           )}

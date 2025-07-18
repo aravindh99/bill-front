@@ -3,6 +3,7 @@ import axios from 'axios';
 import ModernModal from '../components/ModernModal';
 import ConfirmModal from '../components/ConfirmModal';
 import { formatRelatedRecords, getErrorMessage, getErrorType } from '../utils/errorHelpers.jsx';
+import ReadOnlyDocumentNumber from '../components/ReadOnlyDocumentNumber';
 
 const Invoices = () => {
   const [invoices, setInvoices] = useState([]);
@@ -14,6 +15,8 @@ const Invoices = () => {
   const [editingInvoice, setEditingInvoice] = useState(null);
   const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '', type: 'error' });
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
+  const [proformas, setProformas] = useState([]);
+  const [quotations, setQuotations] = useState([]);
   const [formData, setFormData] = useState({
     clientId: '',
     invoiceNo: '',
@@ -29,14 +32,100 @@ const Invoices = () => {
     balance: '0.00',
     drCr: 'DR',
     termsConditions: '',
-    items: []
+    items: [],
+    proformaInvoiceId: '',
+    quotationId: ''
+  });
+  const [profile, setProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [companyCodeMissing, setCompanyCodeMissing] = useState(false);
+
+  // New state for payment modal
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentFormData, setPaymentFormData] = useState({
+    invoiceId: '',
+    amount: '',
+    paymentDate: new Date().toISOString().split('T')[0],
+    paymentMethod: '',
+    transactionId: '',
+    notes: ''
   });
 
   useEffect(() => {
     fetchInvoices();
     fetchClients();
     fetchItems();
+    fetchProfile();
   }, []);
+
+  useEffect(() => {
+    if (formData.clientId) {
+      axios.get(`/proformas/client/${formData.clientId}`)
+        .then(res => setProformas(res.data))
+        .catch(() => setProformas([]));
+      axios.get(`/quotations/client/${formData.clientId}`)
+        .then(res => setQuotations(res.data))
+        .catch(() => setQuotations([]));
+    } else {
+      setProformas([]);
+      setQuotations([]);
+      setFormData(f => ({ ...f, proformaInvoiceId: '', quotationId: '' }));
+    }
+  }, [formData.clientId]);
+
+  useEffect(() => {
+    if (
+      formData.proformaInvoiceId &&
+      !editingInvoice &&
+      (!formData.items || formData.items.length === 0)
+    ) {
+      const selectedProforma = proformas.find(p => p.id === parseInt(formData.proformaInvoiceId));
+      if (selectedProforma) {
+        const newItems = selectedProforma.items.map(item => ({
+          itemId: item.itemId?.toString() || '',
+          unit: item.unit,
+          quantity: item.quantity.toString(),
+          price: item.price.toString(),
+          discountPercent: item.discountPercent?.toString() || '0',
+          total: item.total.toString(),
+          description: item.description || ''
+        }));
+        setFormData(f => ({
+          ...f,
+          quotationId: selectedProforma.quotationId ? selectedProforma.quotationId.toString() : '',
+          items: newItems
+        }));
+        calculateTotals(newItems); // Recalculate totals after setting items
+      }
+    }
+  }, [formData.proformaInvoiceId, proformas, editingInvoice]);
+
+  useEffect(() => {
+    if (
+      formData.quotationId &&
+      !editingInvoice &&
+      (!formData.items || formData.items.length === 0) &&
+      !formData.proformaInvoiceId
+    ) {
+      const selectedQuotation = quotations.find(q => q.id === parseInt(formData.quotationId));
+      if (selectedQuotation) {
+        const newItems = selectedQuotation.items.map(item => ({
+          itemId: item.itemId?.toString() || '',
+          unit: item.unit,
+          quantity: item.quantity.toString(),
+          price: item.price.toString(),
+          discountPercent: item.discountPercent?.toString() || '0',
+          total: item.total.toString(),
+          description: item.description || ''
+        }));
+        setFormData(f => ({
+          ...f,
+          items: newItems
+        }));
+        calculateTotals(newItems); // Recalculate totals after setting items
+      }
+    }
+  }, [formData.quotationId, quotations, editingInvoice, formData.proformaInvoiceId]);
 
   const fetchInvoices = async () => {
     try {
@@ -68,6 +157,23 @@ const Invoices = () => {
     }
   };
 
+  const fetchProfile = async () => {
+    setProfileLoading(true);
+    try {
+      const response = await axios.get('/profiles');
+      if (response.data.length > 0) {
+        setProfile(response.data[0]);
+        setCompanyCodeMissing(!response.data[0].companyCode);
+      } else {
+        setCompanyCodeMissing(true);
+      }
+    } catch (error) {
+      setCompanyCodeMissing(true);
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
   const showErrorModal = (title, message, type = 'error') => {
     setErrorModal({ isOpen: true, title, message, type });
   };
@@ -78,26 +184,30 @@ const Invoices = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // Validate that we have at least one item
+    if (companyCodeMissing) return;
     if (formData.items.length === 0) {
       showErrorModal('Error', 'Please add at least one item to the invoice', 'error');
       return;
     }
-    
-    console.log('Submitting invoice data:', formData);
-    
-    // Prepare the data with proper types
+    // Prepare the data with proper types, do NOT include invoiceNo
+    const { clientId, poNo, invoiceDate, poDate, dueDate, paymentTerms, shippingCharges, subtotal, tax, amount, balance, drCr, termsConditions, items, proformaInvoiceId, quotationId } = formData;
     const invoiceData = {
-      ...formData,
-      clientId: parseInt(formData.clientId),
-      shippingCharges: formData.shippingCharges || '0.00',
-      subtotal: formData.subtotal,
-      tax: formData.tax,
-      amount: formData.amount,
-      balance: formData.balance || formData.amount, // Balance equals amount for new invoices
-      drCr: formData.drCr || 'DR',
-      items: formData.items.map(item => ({
+      clientId: parseInt(clientId),
+      poNo,
+      invoiceDate,
+      poDate,
+      dueDate,
+      paymentTerms,
+      shippingCharges,
+      subtotal,
+      tax,
+      amount,
+      balance,
+      drCr,
+      termsConditions,
+      proformaInvoiceId: proformaInvoiceId ? parseInt(proformaInvoiceId) : undefined,
+      quotationId: quotationId ? parseInt(quotationId) : undefined,
+      items: items.map(item => ({
         itemId: parseInt(item.itemId),
         unit: item.unit,
         quantity: item.quantity,
@@ -107,15 +217,12 @@ const Invoices = () => {
         description: item.description || ''
       }))
     };
-    
     try {
       if (editingInvoice) {
         const response = await axios.put(`/invoices/${editingInvoice.id}`, invoiceData);
-        console.log('Update response:', response.data);
         showErrorModal('Success', 'Invoice updated successfully!', 'success');
       } else {
         const response = await axios.post('/invoices', invoiceData);
-        console.log('Create response:', response.data);
         showErrorModal('Success', 'Invoice created successfully!', 'success');
       }
       setShowModal(false);
@@ -123,8 +230,6 @@ const Invoices = () => {
       resetForm();
       fetchInvoices();
     } catch (error) {
-      console.error('Error saving invoice:', error);
-      console.error('Error response:', error.response?.data);
       showErrorModal('Error', getErrorMessage(error, 'Failed to save invoice'), getErrorType(error));
     }
   };
@@ -156,6 +261,16 @@ const Invoices = () => {
         description: item.description || ''
       })) || []
     });
+    // Initialize payment form data when editing an invoice
+    setPaymentFormData(prev => ({
+      ...prev,
+      invoiceId: invoice.id.toString(),
+      amount: (invoice.balance || invoice.amount || 0).toString(), // Pre-fill with outstanding balance
+      paymentDate: new Date().toISOString().split('T')[0],
+      paymentMethod: '', // Clear previous method
+      transactionId: '', // Clear previous transaction ID
+      notes: '' // Clear previous notes
+    }));
     setShowModal(true);
   };
 
@@ -216,7 +331,9 @@ const Invoices = () => {
       balance: '0.00',
       drCr: 'DR',
       termsConditions: '',
-      items: []
+      items: [],
+      proformaInvoiceId: '',
+      quotationId: ''
     });
   };
 
@@ -349,6 +466,203 @@ const Invoices = () => {
     });
   };
 
+  const handleOpenPaymentModal = () => {
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        invoiceId: parseInt(paymentFormData.invoiceId),
+        amount: parseFloat(paymentFormData.amount),
+        paymentDate: paymentFormData.paymentDate,
+        paymentMethod: paymentFormData.paymentMethod,
+        transactionId: paymentFormData.transactionId,
+        notes: paymentFormData.notes,
+      };
+      await axios.post('/payments', payload); // Assuming backend endpoint is /payments
+      showErrorModal('Success', 'Payment recorded successfully!', 'success');
+      setShowPaymentModal(false);
+      // Fetch the updated invoice to reflect the new balance and payments
+      if (editingInvoice) {
+        const response = await axios.get(`/invoices/${editingInvoice.id}`);
+        setEditingInvoice(response.data);
+      }
+      fetchInvoices(); // Re-fetch invoices to update the main list
+    } catch (error) {
+      console.error('Error saving payment:', error);
+      showErrorModal('Error', getErrorMessage(error, 'Failed to record payment'), getErrorType(error));
+    }
+  };
+
+  // New function for printing invoice
+  const handlePrintInvoice = async (invoiceId) => {
+    try {
+      const invoiceResponse = await axios.get(`/invoices/${invoiceId}`);
+      const invoice = invoiceResponse.data;
+
+      const profileResponse = await axios.get('/profiles'); // Fetch company profile
+      const companyProfile = profileResponse.data.length > 0 ? profileResponse.data[0] : {};
+
+      if (!invoice) {
+        showErrorModal('Error', 'Invoice not found for printing', 'error');
+        return;
+      }
+
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        showErrorModal('Error', 'Please allow pop-ups for printing', 'error');
+        return;
+      }
+
+      const invoiceHtml = `
+        <html>
+          <head>
+            <title>Invoice #${invoice.invoiceNo}</title>
+            <style>
+              body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; }
+              .invoice-page { width: 210mm; min-height: 297mm; margin: 10mm auto; border: 1px solid #eee; background: #fff; padding: 20mm; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
+              .header-section { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
+              .company-info h1 { margin: 0; font-size: 28px; color: #333; }
+              .company-info p { margin: 2px 0; font-size: 14px; color: #555; }
+              .invoice-title { font-size: 40px; font-weight: bold; color: #333; margin-top: 0; }
+              .invoice-meta { margin-top: 10px; text-align: right; font-size: 14px; }
+              .invoice-meta div { margin-bottom: 5px; }
+
+              .address-section { display: flex; justify-content: space-between; margin-bottom: 30px; }
+              .address-box { border: 1px solid #eee; padding: 15px; width: 48%; }
+              .address-box h3 { margin-top: 0; font-size: 16px; color: #333; }
+              .address-box p { margin: 2px 0; font-size: 14px; color: #555; }
+
+              .item-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+              .item-table th, .item-table td { border: 1px solid #eee; padding: 10px; text-align: left; font-size: 14px; }
+              .item-table th { background-color: #f9f9f9; font-weight: bold; color: #333; }
+
+              .summary-section { display: flex; justify-content: flex-end; margin-bottom: 30px; }
+              .summary-box { width: 40%; border: 1px solid #eee; }
+              .summary-row { display: flex; justify-content: space-between; padding: 8px 15px; border-bottom: 1px solid #eee; }
+              .summary-row:last-child { border-bottom: none; }
+              .summary-row.total { background-color: #f2f2f2; font-weight: bold; font-size: 16px; }
+
+              .terms-conditions { font-size: 13px; color: #555; margin-bottom: 30px; }
+              .footer-section { text-align: center; font-size: 12px; color: #777; border-top: 1px solid #eee; padding-top: 15px; }
+              @media print {
+                .invoice-page { box-shadow: none; border: none; }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="invoice-page">
+              <div class="header-section">
+                <div class="company-info">
+                  ${companyProfile.logo ? `<img src="${companyProfile.logo}" alt="Company Logo" style="height: 60px; margin-bottom: 10px;"/>` : ''}
+                  <h1>${companyProfile.companyName || 'Your Company Name'}</h1>
+                  <p>${companyProfile.address || 'Your Company Address'}</p>
+                  <p>${companyProfile.city || 'City'}, ${companyProfile.state || 'State'} ${companyProfile.pinCode || 'PIN'}</p>
+                  <p>Email: ${companyProfile.email || 'N/A'} | Phone: ${companyProfile.phone || 'N/A'}</p>
+                  ${companyProfile.website ? `<p>Website: ${companyProfile.website}</p>` : ''}
+                  ${companyProfile.serviceTaxNo ? `<p>Service Tax No: ${companyProfile.serviceTaxNo}</p>` : ''}
+                </div>
+                <div>
+                  <h2 class="invoice-title">INVOICE</h2>
+                  <div class="invoice-meta">
+                    <div><strong>Invoice No:</strong> ${invoice.invoiceNo}</div>
+                    <div><strong>Invoice Date:</strong> ${new Date(invoice.invoiceDate).toLocaleDateString()}</div>
+                    <div><strong>Due Date:</strong> ${new Date(invoice.dueDate).toLocaleDateString()}</div>
+                    ${invoice.poNo ? `<div><strong>PO No:</strong> ${invoice.poNo}</div>` : ''}
+                  </div>
+                </div>
+              </div>
+
+              <div class="address-section">
+                <div class="address-box">
+                  <h3>Bill To:</h3>
+                  <p><strong>${invoice.client?.companyName || 'Client Name'}</strong></p>
+                  <p>${invoice.client?.billingAddress || 'Client Address'}</p>
+                  <p>${invoice.client?.city || 'City'}, ${invoice.client?.state || 'State'} ${invoice.client?.pinCode || 'PIN'}</p>
+                  <p>Email: ${invoice.client?.email || 'N/A'}</p>
+                  <p>Phone: ${invoice.client?.phone || 'N/A'}</p>
+                  ${invoice.client?.gstin ? `<p>GSTIN: ${invoice.client.gstin}</p>` : ''}
+                </div>
+                <div class="address-box">
+                  <h3>Ship To:</h3>
+                  <p><strong>${invoice.client?.companyName || 'Client Name'}</strong></p>
+                  <p>${invoice.client?.shippingAddress || 'Client Address'}</p>
+                  <p>${invoice.client?.city || 'City'}, ${invoice.client?.state || 'State'} ${invoice.client?.pinCode || 'PIN'}</p>
+                  <!-- Assuming shipping address is stored in client, or you can add it to Invoice model if needed -->
+                </div>
+              </div>
+
+              <table class="item-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Item & Description</th>
+                    <th>Qty</th>
+                    <th>Unit Price</th>
+                    <th>Discount</th>
+                    <th>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${invoice.invoiceItems.map((item, index) => `
+                    <tr>
+                      <td>${index + 1}</td>
+                      <td>
+                        <strong>${item.item?.name || 'N/A'}</strong><br/>
+                        <span style="font-size: 12px; color: #777;">${item.description || ''}</span>
+                      </td>
+                      <td>${item.quantity} ${item.unit}</td>
+                      <td>${formatCurrency(item.price)}</td>
+                      <td>${item.discountPercent || '0'}%</td>
+                      <td>${formatCurrency(item.total)}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+
+              <div class="summary-section">
+                <div class="summary-box">
+                  <div class="summary-row"><span>Subtotal:</span><span>${formatCurrency(invoice.subtotal)}</span></div>
+                  <div class="summary-row"><span>Tax:</span><span>${formatCurrency(invoice.tax || 0)}</span></div>
+                  <div class="summary-row"><span>Shipping Charges:</span><span>${formatCurrency(invoice.shippingCharges || 0)}</span></div>
+                  <div class="summary-row total"><span>TOTAL:</span><span>${formatCurrency(invoice.amount)}</span></div>
+                  <div class="summary-row"><span>Amount Paid:</span><span>${formatCurrency(invoice.amount - invoice.balance)}</span></div>
+                  <div class="summary-row"><span>Balance Due:</span><span>${formatCurrency(invoice.balance)}</span></div>
+                </div>
+              </div>
+
+              ${invoice.termsConditions ? `<div class="terms-conditions">
+                <strong>Terms and Conditions:</strong>
+                <p>${invoice.termsConditions}</p>
+              </div>` : ''}
+
+              <div class="footer-section">
+                <p>${companyProfile.companyName || 'Your Company Name'} | ${companyProfile.address || 'Your Company Address'}</p>
+                <p>Email: ${companyProfile.email || 'N/A'} | Phone: ${companyProfile.phone || 'N/A'} | Website: ${companyProfile.website || 'N/A'}</p>
+                ${companyProfile.bankDetails && companyProfile.bankDetails.length > 0 ? `
+                  <p>Bank: ${companyProfile.bankDetails[0].bankName} | A/C No: ${companyProfile.bankDetails[0].accountNumber} | IFSC: ${companyProfile.bankDetails[0].ifscCode}</p>
+                ` : ''}
+                <p>Thank you for your business!</p>
+              </div>
+            </div>
+          </body>
+        </html>
+      `;
+
+      printWindow.document.write(invoiceHtml);
+      printWindow.document.close();
+      printWindow.focus();
+      printWindow.print();
+      // printWindow.close(); // Optionally close after printing, but can cause issues depending on browser settings
+
+    } catch (error) {
+      console.error('Error printing invoice:', error);
+      showErrorModal('Error', getErrorMessage(error, 'Failed to print invoice'), getErrorType(error));
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-8">
@@ -398,14 +712,14 @@ const Invoices = () => {
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Invoice #</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Client</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Date</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Due Date</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Amount</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Balance</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Status</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Actions</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Invoice #</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Client</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Date</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Due Date</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Amount</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Balance</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Status</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -432,10 +746,16 @@ const Invoices = () => {
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex space-x-2">
-                          <button className="text-blue-600 hover:text-blue-800" onClick={() => handleEdit(invoice)}>
-                            👁️
+                          <button 
+                            className="text-blue-600 hover:text-blue-800"
+                            onClick={() => handleEdit(invoice)}
+                          >
+                            ✏️
                           </button>
-                          <button className="text-green-600 hover:text-green-800">
+                          <button 
+                            className="text-green-600 hover:text-green-800"
+                            onClick={() => handlePrintInvoice(invoice.id)}
+                          >
                             📄
                           </button>
                           <button
@@ -491,28 +811,79 @@ const Invoices = () => {
                     <select
                       name="clientId"
                       value={formData.clientId}
-                      onChange={(e) => setFormData({...formData, clientId: e.target.value})}
+                      onChange={(e) => setFormData(f => ({ ...f, clientId: e.target.value, proformaInvoiceId: '', quotationId: '' }))}
                       className="form-input"
                       required
                     >
                       <option value="">Select Client</option>
-                      {clients.map((client) => (
+                      {clients.map(client => (
                         <option key={client.id} value={client.id}>
                           {client.companyName}
                         </option>
                       ))}
                     </select>
                   </div>
+
+                  {!editingInvoice && formData.clientId && (proformas.length > 0 || quotations.length > 0) && (
+                    <div className="form-grid-2">
+                      {proformas.length > 0 && (
+                        <div className="form-group">
+                          <label className="form-label">Create from Proforma Invoice (Optional)</label>
+                          <select
+                            name="proformaInvoiceId"
+                            value={formData.proformaInvoiceId}
+                            onChange={(e) => setFormData(f => ({
+                              ...f,
+                              proformaInvoiceId: e.target.value,
+                              quotationId: '' // Clear quotation if proforma is selected
+                            }))}
+                            className="form-input"
+                          >
+                            <option value="">-- Select Proforma Invoice --</option>
+                            {proformas.map(proforma => (
+                              <option key={proforma.id} value={proforma.id}>
+                                {proforma.proformaNo} ({new Date(proforma.proformaDate).toLocaleDateString()})
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Auto-fills items from the selected Proforma Invoice.
+                          </p>
+                        </div>
+                      )}
+
+                      {quotations.length > 0 && (
+                        <div className="form-group">
+                          <label className="form-label">Create from Quotation (Optional)</label>
+                          <select
+                            name="quotationId"
+                            value={formData.quotationId}
+                            onChange={(e) => setFormData(f => ({
+                              ...f,
+                              quotationId: e.target.value,
+                              proformaInvoiceId: '' // Clear proforma if quotation is selected
+                            }))}
+                            className="form-input"
+                          >
+                            <option value="">-- Select Quotation --</option>
+                            {quotations.map(quotation => (
+                              <option key={quotation.id} value={quotation.id}>
+                                {quotation.quotationNo} ({new Date(quotation.quotationDate).toLocaleDateString()})
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Auto-fills items from the selected Quotation.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="form-group">
-                    <label className="form-label">Invoice Number *</label>
-                    <input
-                      type="text"
-                      name="invoiceNo"
+                    <ReadOnlyDocumentNumber
+                      label="Invoice Number *"
                       value={formData.invoiceNo}
-                      onChange={(e) => setFormData({...formData, invoiceNo: e.target.value})}
-                      className="form-input"
-                      placeholder="INV-001"
-                      required
+                      tooltip="This number is auto-generated by the system and cannot be changed."
                     />
                   </div>
                   <div className="form-group">
@@ -779,6 +1150,36 @@ const Invoices = () => {
                     placeholder="Payment terms, delivery terms, etc."
                   />
                 </div>
+
+                {/* Payment Details and Record Payment Button */}
+                {editingInvoice && (
+                  <div className="mt-6 pt-4 border-t border-gray-200">
+                    <h3 className="text-lg font-semibold mb-3">Payments</h3>
+                    {editingInvoice.payments && editingInvoice.payments.length > 0 ? (
+                      <div className="space-y-2">
+                        {editingInvoice.payments.map((payment) => (
+                          <div key={payment.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-md">
+                            <div>
+                              <p className="text-gray-800 font-medium">{formatCurrency(payment.amount)}</p>
+                              <p className="text-sm text-gray-600">{new Date(payment.paymentDate).toLocaleDateString()}</p>
+                            </div>
+                            <p className="text-sm text-gray-700">{payment.paymentMethod}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-gray-500 text-sm">No payments recorded for this invoice.</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleOpenPaymentModal}
+                      className="btn btn-secondary mt-4"
+                    >
+                      Record Payment
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex justify-end space-x-3 pt-4">
                   <button
                     type="button"
@@ -791,10 +1192,15 @@ const Invoices = () => {
                   >
                     Cancel
                   </button>
-                  <button type="submit" className="btn btn-primary">
+                  <button type="submit" className="btn btn-primary" disabled={companyCodeMissing || profileLoading}>
                     {editingInvoice ? 'Update' : 'Create'} Invoice
                   </button>
                 </div>
+                {companyCodeMissing && !profileLoading && (
+                  <div className="text-red-600 text-sm mt-2">
+                    Please set your <b>Company Code</b> in the <a href="/profile" className="underline">profile</a> before creating invoices.
+                  </div>
+                )}
               </form>
             </div>
           </div>
@@ -820,6 +1226,103 @@ const Invoices = () => {
         message={confirmModal.message}
         onConfirm={confirmModal.onConfirm}
       />
+
+      {/* Payment Modal */}
+      {showPaymentModal && editingInvoice && (
+        <ModernModal
+          isOpen={showPaymentModal}
+          onClose={() => setShowPaymentModal(false)}
+          title="Record New Payment"
+          type="form"
+        >
+          <form onSubmit={handlePaymentSubmit} className="space-y-4">
+            <div className="form-group">
+              <label className="form-label">Invoice Number</label>
+              <input
+                type="text"
+                value={editingInvoice.invoiceNo}
+                className="form-input bg-gray-100 font-mono"
+                readOnly
+                tabIndex={-1}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Amount *</label>
+              <input
+                type="number"
+                name="amount"
+                value={paymentFormData.amount}
+                onChange={(e) => setPaymentFormData({...paymentFormData, amount: e.target.value})}
+                className="form-input"
+                min="0.01"
+                step="0.01"
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Payment Date *</label>
+              <input
+                type="date"
+                name="paymentDate"
+                value={paymentFormData.paymentDate}
+                onChange={(e) => setPaymentFormData({...paymentFormData, paymentDate: e.target.value})}
+                className="form-input"
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Payment Method *</label>
+              <select
+                name="paymentMethod"
+                value={paymentFormData.paymentMethod}
+                onChange={(e) => setPaymentFormData({...paymentFormData, paymentMethod: e.target.value})}
+                className="form-input"
+                required
+              >
+                <option value="">Select Method</option>
+                <option value="Bank Transfer">Bank Transfer</option>
+                <option value="Cash">Cash</option>
+                <option value="Check">Check</option>
+                <option value="Credit Card">Credit Card</option>
+                <option value="Online Payment">Online Payment</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Transaction ID (Optional)</label>
+              <input
+                type="text"
+                name="transactionId"
+                value={paymentFormData.transactionId}
+                onChange={(e) => setPaymentFormData({...paymentFormData, transactionId: e.target.value})}
+                className="form-input"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Notes (Optional)</label>
+              <textarea
+                name="notes"
+                value={paymentFormData.notes}
+                onChange={(e) => setPaymentFormData({...paymentFormData, notes: e.target.value})}
+                className="form-input"
+                rows="2"
+              />
+            </div>
+            <div className="flex justify-end space-x-3 pt-4">
+              <button
+                type="button"
+                onClick={() => setShowPaymentModal(false)}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary">
+                Record Payment
+              </button>
+            </div>
+          </form>
+        </ModernModal>
+      )}
     </div>
   );
 };

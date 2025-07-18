@@ -232,12 +232,12 @@ const Items = () => {
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Item</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">SKU</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Type</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Sales Price</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Purchase Price</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Actions</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Item</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">SKU</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Type</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Sales Price</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Purchase Price</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Actions</th>
                   </tr>
                 </thead>
                 <tbody>

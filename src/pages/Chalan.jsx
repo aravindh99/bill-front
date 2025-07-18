@@ -148,11 +148,11 @@ const Chalan = () => {
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Chalan #</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Client</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Date</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Subject</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Actions</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Chalan #</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Client</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Date</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Subject</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Actions</th>
                   </tr>
                 </thead>
                 <tbody>

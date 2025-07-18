@@ -209,11 +209,11 @@ const VendorContacts = () => {
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Contact Name</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Vendor</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Phone</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Email</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Actions</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Contact Name</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Vendor</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Phone</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Email</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Actions</th>
                   </tr>
                 </thead>
                 <tbody>

@@ -3,6 +3,7 @@ import axios from 'axios';
 import ModernModal from '../components/ModernModal';
 import ConfirmModal from '../components/ConfirmModal';
 import { formatRelatedRecords, getErrorMessage, getErrorType } from '../utils/errorHelpers.jsx';
+import ReadOnlyDocumentNumber from '../components/ReadOnlyDocumentNumber';
 
 const Quotations = () => {
   const [quotations, setQuotations] = useState([]);
@@ -23,20 +24,23 @@ const Quotations = () => {
     total: '0.00',
     items: []
   });
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [companyCodeMissing, setCompanyCodeMissing] = useState(false);
 
   useEffect(() => {
     fetchQuotations();
     fetchClients();
     fetchItems();
+    fetchProfile();
   }, []);
 
   const fetchQuotations = async () => {
     try {
       const response = await axios.get('/quotations');
       setQuotations(response.data);
-    } catch (error) {
-      console.error('Error fetching quotations:', error);
-      showErrorModal('Error', getErrorMessage(error, 'Failed to fetch quotations'), getErrorType(error));
+    } catch (_error) {
+      console.error('Error fetching quotations:', _error);
+      showErrorModal('Error', getErrorMessage(_error, 'Failed to fetch quotations'), getErrorType(_error));
     } finally {
       setLoading(false);
     }
@@ -46,9 +50,9 @@ const Quotations = () => {
     try {
       const response = await axios.get('/clients');
       setClients(response.data);
-    } catch (error) {
-      console.error('Error fetching clients:', error);
-      showErrorModal('Error', getErrorMessage(error, 'Failed to fetch clients'), getErrorType(error));
+    } catch (_error) {
+      console.error('Error fetching clients:', _error);
+      showErrorModal('Error', getErrorMessage(_error, 'Failed to fetch clients'), getErrorType(_error));
     }
   };
 
@@ -56,8 +60,25 @@ const Quotations = () => {
     try {
       const response = await axios.get('/items');
       setItems(response.data);
-    } catch (error) {
-      console.error('Error fetching items:', error);
+    } catch (_error) {
+      console.error('Error fetching items:', _error);
+    }
+  };
+
+  const fetchProfile = async () => {
+    setProfileLoading(true);
+    try {
+      const response = await axios.get('/profiles');
+      if (response.data.length > 0) {
+        setCompanyCodeMissing(!response.data[0].companyCode);
+      } else {
+        setCompanyCodeMissing(true);
+      }
+    } catch (_error) {
+      console.error('Error fetching profile:', _error);
+      setCompanyCodeMissing(true);
+    } finally {
+      setProfileLoading(false);
     }
   };
 
@@ -79,8 +100,8 @@ const Quotations = () => {
       async () => {
         try {
           console.log('Deleting quotation with ID:', id);
-          const response = await axios.delete(`/quotations/${id}`);
-          console.log('Delete response:', response.data);
+          const _response = await axios.delete(`/quotations/${id}`);
+          console.log('Delete response:', _response.data);
           showErrorModal('Success', 'Quotation deleted successfully!', 'success');
           fetchQuotations();
         } catch (error) {
@@ -109,25 +130,185 @@ const Quotations = () => {
       }
     );
   };
+   const handlePrintQuotation= async (quotationId) => {
+      try {
+        const quotationResponse = await axios.get(`/quotations/${quotationId}`);
+        const quotation = quotationResponse.data;
+  
+        const profileResponse = await axios.get('/profiles'); // Fetch company profile
+        const companyProfile = profileResponse.data.length > 0 ? profileResponse.data[0] : {};
+  
+        if (!quotation) {
+          showErrorModal('Error', 'quotation not found for printing', 'error');
+          return;
+        }
+  
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+          showErrorModal('Error', 'Please allow pop-ups for printing', 'error');
+          return;
+        }
+  
+        const quotationHtml = `
+          <html>
+            <head>
+              <title>quotation #${quotation.quotationNo}</title>
+              <style>
+                body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; }
+                .quotation-page { width: 210mm; min-height: 297mm; margin: 10mm auto; border: 1px solid #eee; background: #fff; padding: 20mm; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
+                .header-section { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
+                .company-info h1 { margin: 0; font-size: 28px; color: #333; }
+                .company-info p { margin: 2px 0; font-size: 14px; color: #555; }
+                .quotation-title { font-size: 40px; font-weight: bold; color: #333; margin-top: 0; }
+                .quotation-meta { margin-top: 10px; text-align: right; font-size: 14px; }
+                .quotation-meta div { margin-bottom: 5px; }
+  
+                .address-section { display: flex; justify-content: space-between; margin-bottom: 30px; }
+                .address-box { border: 1px solid #eee; padding: 15px; width: 48%; }
+                .address-box h3 { margin-top: 0; font-size: 16px; color: #333; }
+                .address-box p { margin: 2px 0; font-size: 14px; color: #555; }
+  
+                .item-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+                .item-table th, .item-table td { border: 1px solid #eee; padding: 10px; text-align: left; font-size: 14px; }
+                .item-table th { background-color: #f9f9f9; font-weight: bold; color: #333; }
+  
+                .summary-section { display: flex; justify-content: flex-end; margin-bottom: 30px; }
+                .summary-box { width: 40%; border: 1px solid #eee; }
+                .summary-row { display: flex; justify-content: space-between; padding: 8px 15px; border-bottom: 1px solid #eee; }
+                .summary-row:last-child { border-bottom: none; }
+                .summary-row.total { background-color: #f2f2f2; font-weight: bold; font-size: 16px; }
+  
+                .terms-conditions { font-size: 13px; color: #555; margin-bottom: 30px; }
+                .footer-section { text-align: center; font-size: 12px; color: #777; border-top: 1px solid #eee; padding-top: 15px; }
+                @media print {
+                  .quotation-page { box-shadow: none; border: none; }
+                }
+              </style>
+            </head>
+            <body>
+              <div class="quotation-page">
+                <div class="header-section">
+                  <div class="company-info">
+                    ${companyProfile.logo ? `<img src="${companyProfile.logo}" alt="Company Logo" style="height: 60px; margin-bottom: 10px;"/>` : ''}
+                    <h1>${companyProfile.companyName || 'Your Company Name'}</h1>
+                    <p>${companyProfile.address || 'Your Company Address'}</p>
+                    <p>${companyProfile.city || 'City'}, ${companyProfile.state || 'State'} ${companyProfile.pinCode || 'PIN'}</p>
+                    <p>Email: ${companyProfile.email || 'N/A'} | Phone: ${companyProfile.phone || 'N/A'}</p>
+                    ${companyProfile.website ? `<p>Website: ${companyProfile.website}</p>` : ''}
+                    ${companyProfile.serviceTaxNo ? `<p>Service Tax No: ${companyProfile.serviceTaxNo}</p>` : ''}
+                  </div>
+                  <div>
+                    <h2 class="quotation-title">QUOTATION</h2>
+                    <div class="quotation-meta">
+                      <div><strong>Quotation No:</strong> ${quotation.quotationNo}</div>
+                      <div><strong>Quotation Date:</strong> ${new Date(quotation.quotationDate).toLocaleDateString()}</div>
+                      <div><strong>Valid Until:</strong> ${new Date(quotation.validUntil).toLocaleDateString()}</div>
+                      ${quotation.poNumber ? `<div><strong>PO No:</strong> ${quotation.poNumber}</div>` : ''}
+                    </div>
+                  </div>
+                </div>
+  
+                <div class="address-section">
+                  <div class="address-box">
+                    <h3>Bill To:</h3>
+                    <p><strong>${quotation.client?.companyName || 'Client Name'}</strong></p>
+                    <p>${quotation.client?.billingAddress || 'Client Address'}</p>
+                    <p>${quotation.client?.city || 'City'}, ${quotation.client?.state || 'State'} ${quotation.client?.pinCode || 'PIN'}</p>
+                    <p>Email: ${quotation.client?.email || 'N/A'}</p>
+                    <p>Phone: ${quotation.client?.phone || 'N/A'}</p>
+                    ${quotation.client?.gstin ? `<p>GSTIN: ${quotation.client.gstin}</p>` : ''}
+                  </div>
+                  <div class="address-box">
+                    <h3>Ship To:</h3>
+                    <p><strong>${quotation.client?.companyName || 'Client Name'}</strong></p>
+                    <p>${quotation.client?.shippingAddress || 'Client Address'}</p>
+                    <p>${quotation.client?.city || 'City'}, ${quotation.client?.state || 'State'} ${quotation.client?.pinCode || 'PIN'}</p>
+                    <!-- Assuming shipping address is stored in client, or you can add it to quotation model if needed -->
+                  </div>
+                </div>
+  
+                <table class="item-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Item & Description</th>
+                      <th>Qty</th>
+                      <th>Unit Price</th>
+                      <th>Discount</th>
+                      <th>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${quotation.items.map((item, index) => `
+                      <tr>
+                        <td>${index + 1}</td>
+                        <td>
+                          <strong>${item.item?.name || 'N/A'}</strong><br/>
+                          <span style="font-size: 12px; color: #777;">${item.description || ''}</span>
+                        </td>
+                        <td>${item.quantity} ${item.unit}</td>
+                        <td>${formatCurrency(item.price)}</td>
+                        <td>${item.discountPercent || '0'}%</td>
+                        <td>${formatCurrency(item.total)}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+  
+                <div class="summary-section">
+                  <div class="summary-box">
+                    <div class="summary-row"><span>Subtotal:</span><span>${formatCurrency(quotation.subtotal)}</span></div>
+                    <div class="summary-row total"><span>TOTAL:</span><span>${formatCurrency(quotation.total)}</span></div>
+                  </div>
+                </div>
+  
+                ${quotation.termsConditions ? `<div class="terms-conditions">
+                  <strong>Terms and Conditions:</strong>
+                  <p>${quotation.termsConditions}</p>
+                </div>` : ''}
+  
+                <div class="footer-section">
+                  <p>${companyProfile.companyName || 'Your Company Name'} | ${companyProfile.address || 'Your Company Address'}</p>
+                  <p>Email: ${companyProfile.email || 'N/A'} | Phone: ${companyProfile.phone || 'N/A'} | Website: ${companyProfile.website || 'N/A'}</p>
+                  ${companyProfile.bankDetails && companyProfile.bankDetails.length > 0 ? `
+                    <p>Bank: ${companyProfile.bankDetails[0].bankName} | A/C No: ${companyProfile.bankDetails[0].accountNumber} | IFSC: ${companyProfile.bankDetails[0].ifscCode}</p>
+                  ` : ''}
+                  <p>Thank you for your business!</p>
+                </div>
+              </div>
+            </body>
+          </html>
+        `;
+  
+        printWindow.document.write(quotationHtml);
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
+        // printWindow.close(); // Optionally close after printing, but can cause issues depending on browser settings
+  
+      } catch (_error) {
+        console.error('Error printing Quotation:', _error);
+        showErrorModal('Error', getErrorMessage(_error, 'Failed to print Quotation'), getErrorType(_error));
+      }
+    };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // Validate that we have at least one item
+    if (companyCodeMissing) return;
     if (formData.items.length === 0) {
       showErrorModal('Error', 'Please add at least one item to the quotation', 'error');
       return;
     }
-    
-    console.log('Submitting quotation data:', formData);
-    
-    // Prepare the data with proper types
+    // Prepare the data with proper types, do NOT include quotationNo
+    const { clientId, poNumber, quotationDate, validUntil, subtotal, total, items } = formData;
     const quotationData = {
-      ...formData,
-      clientId: parseInt(formData.clientId),
-      subtotal: formData.subtotal,
-      total: formData.total,
-      items: formData.items.map(item => ({
+      clientId: parseInt(clientId),
+      poNumber,
+      quotationDate,
+      validUntil,
+      subtotal,
+      total,
+      items: items.map(item => ({
         itemId: parseInt(item.itemId),
         unit: item.unit,
         quantity: item.quantity,
@@ -137,15 +318,12 @@ const Quotations = () => {
         description: item.description || ''
       }))
     };
-    
     try {
       if (editingQuotation) {
-        const response = await axios.put(`/quotations/${editingQuotation.id}`, quotationData);
-        console.log('Update response:', response.data);
+        const _response = await axios.put(`/quotations/${editingQuotation.id}`, quotationData);
         showErrorModal('Success', 'Quotation updated successfully!', 'success');
       } else {
-        const response = await axios.post('/quotations', quotationData);
-        console.log('Create response:', response.data);
+        const _response = await axios.post('/quotations', quotationData);
         showErrorModal('Success', 'Quotation created successfully!', 'success');
       }
       setShowModal(false);
@@ -153,8 +331,6 @@ const Quotations = () => {
       resetForm();
       fetchQuotations();
     } catch (error) {
-      console.error('Error saving quotation:', error);
-      console.error('Error response:', error.response?.data);
       showErrorModal('Error', getErrorMessage(error, 'Failed to save quotation'), getErrorType(error));
     }
   };
@@ -320,12 +496,12 @@ const Quotations = () => {
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Quotation #</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Client</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Date</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Valid Until</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Total</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Actions</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Quotation #</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Client</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Date</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Valid Until</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Total</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -344,8 +520,18 @@ const Quotations = () => {
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex space-x-2">
-                          <button className="text-blue-600 hover:text-blue-800">👁️</button>
-                          <button className="text-green-600 hover:text-green-800">📄</button>
+                          <button 
+                            className="text-blue-600 hover:text-blue-800"
+                            onClick={() => handleEdit(quotation)}
+                          >
+                            ✏️
+                          </button>
+                          <button 
+                            className="text-green-600 hover:text-green-800"
+                            onClick={() => handlePrintQuotation(quotation.id)}
+                          >
+                            📄
+                          </button>
                           <button
                             onClick={() => {
                               console.log('Delete button clicked for quotation ID:', quotation.id);
@@ -412,15 +598,10 @@ const Quotations = () => {
                     </select>
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Quotation Number *</label>
-                    <input
-                      type="text"
-                      name="quotationNo"
+                    <ReadOnlyDocumentNumber
+                      label="Quotation Number *"
                       value={formData.quotationNo}
-                      onChange={(e) => setFormData({...formData, quotationNo: e.target.value})}
-                      className="form-input"
-                      placeholder="QT-001"
-                      required
+                      tooltip="This number is auto-generated by the system and cannot be changed."
                     />
                   </div>
                   <div className="form-group">
@@ -431,6 +612,7 @@ const Quotations = () => {
                       value={formData.quotationDate}
                       onChange={(e) => setFormData({...formData, quotationDate: e.target.value})}
                       className="form-input"
+                      max={new Date().toISOString().split('T')[0]}
                       required
                     />
                   </div>
@@ -442,6 +624,7 @@ const Quotations = () => {
                       value={formData.validUntil}
                       onChange={(e) => setFormData({...formData, validUntil: e.target.value})}
                       className="form-input"
+                      min={formData.quotationDate}
                       required
                     />
                   </div>
@@ -524,20 +707,23 @@ const Quotations = () => {
                               <td className="py-2 px-2">
                                 <input
                                   type="number"
+                                  name="quantity"
                                   value={item.quantity}
                                   onChange={(e) => updateItem(index, 'quantity', e.target.value)}
-                                  className="form-input form-input-sm"
+                                  className="form-input"
                                   min="0"
-                                  step="any"
+                                  step="1"
                                   required
                                 />
                               </td>
                               <td className="py-2 px-2">
                                 <input
                                   type="number"
+                                  name="rate"
                                   value={item.price}
                                   onChange={(e) => updateItem(index, 'price', e.target.value)}
-                                  className="form-input form-input-sm"
+                                  className="form-input"
+                                  placeholder="0.00"
                                   min="0"
                                   step="0.01"
                                   required
@@ -546,12 +732,13 @@ const Quotations = () => {
                               <td className="py-2 px-2">
                                 <input
                                   type="number"
-                                  value={item.discountPercent}
-                                  onChange={(e) => updateItem(index, 'discountPercent', e.target.value)}
-                                  className="form-input form-input-sm"
+                                  name="taxRate"
+                                  value={item.taxRate || ''}
+                                  onChange={(e) => updateItem(index, 'taxRate', e.target.value)}
+                                  className="form-input"
                                   min="0"
-                                  max="100"
                                   step="0.01"
+                                  placeholder="e.g., 18 for 18%"
                                 />
                               </td>
                               <td className="py-2 px-2">
@@ -621,10 +808,15 @@ const Quotations = () => {
                   >
                     Cancel
                   </button>
-                  <button type="submit" className="btn btn-primary">
+                  <button type="submit" className="btn btn-primary" disabled={companyCodeMissing || profileLoading}>
                     {editingQuotation ? 'Update' : 'Create'} Quotation
                   </button>
                 </div>
+                {companyCodeMissing && !profileLoading && (
+                  <div className="text-red-600 text-sm mt-2">
+                    Please set your <b>Company Code</b> in the <a href="/profile" className="underline">profile</a> before creating quotations.
+                  </div>
+                )}
               </form>
             </div>
           </div>

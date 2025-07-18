@@ -3,6 +3,7 @@ import axios from 'axios';
 import ModernModal from '../components/ModernModal';
 import ConfirmModal from '../components/ConfirmModal';
 import { formatRelatedRecords, getErrorMessage, getErrorType } from '../utils/errorHelpers.jsx';
+import ReadOnlyDocumentNumber from '../components/ReadOnlyDocumentNumber';
 
 const PurchaseOrders = () => {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
@@ -22,20 +23,23 @@ const PurchaseOrders = () => {
     total: '0.00',
     items: []
   });
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [companyCodeMissing, setCompanyCodeMissing] = useState(false);
 
   useEffect(() => {
     fetchPurchaseOrders();
     fetchVendors();
     fetchItems();
+    fetchProfile();
   }, []);
 
   const fetchPurchaseOrders = async () => {
     try {
-      const response = await axios.get('/purchase-orders');
-      setPurchaseOrders(response.data);
-    } catch (error) {
-      console.error('Error fetching purchase orders:', error);
-      showErrorModal('Error', getErrorMessage(error, 'Failed to fetch purchase orders'), getErrorType(error));
+      const _response = await axios.get('/purchase-orders');
+      setPurchaseOrders(_response.data);
+    } catch (_error) {
+      console.error('Error fetching purchase orders:', _error);
+      showErrorModal('Error', getErrorMessage(_error, 'Failed to fetch purchase orders'), getErrorType(_error));
     } finally {
       setLoading(false);
     }
@@ -43,20 +47,37 @@ const PurchaseOrders = () => {
 
   const fetchVendors = async () => {
     try {
-      const response = await axios.get('/vendors');
-      setVendors(response.data);
-    } catch (error) {
-      console.error('Error fetching vendors:', error);
-      showErrorModal('Error', getErrorMessage(error, 'Failed to fetch vendors'), getErrorType(error));
+      const _response = await axios.get('/vendors');
+      setVendors(_response.data);
+    } catch (_error) {
+      console.error('Error fetching vendors:', _error);
+      showErrorModal('Error', getErrorMessage(_error, 'Failed to fetch vendors'), getErrorType(_error));
     }
   };
 
   const fetchItems = async () => {
     try {
-      const response = await axios.get('/items');
-      setItems(response.data);
-    } catch (error) {
-      console.error('Error fetching items:', error);
+      const _response = await axios.get('/items');
+      setItems(_response.data);
+    } catch (_error) {
+      console.error('Error fetching items:', _error);
+    }
+  };
+
+  const fetchProfile = async () => {
+    setProfileLoading(true);
+    try {
+      const response = await axios.get('/profiles');
+      if (response.data.length > 0) {
+        setCompanyCodeMissing(!response.data[0].companyCode);
+      } else {
+        setCompanyCodeMissing(true);
+      }
+    } catch (_error) {
+      console.error('Error fetching profile:', _error);
+      setCompanyCodeMissing(true);
+    } finally {
+      setProfileLoading(false);
     }
   };
 
@@ -78,8 +99,8 @@ const PurchaseOrders = () => {
       async () => {
         try {
           console.log('Deleting purchase order with ID:', id);
-          const response = await axios.delete(`/purchase-orders/${id}`);
-          console.log('Delete response:', response.data);
+          const _response = await axios.delete(`/purchase-orders/${id}`);
+          console.log('Delete response:', _response.data);
           showErrorModal('Success', 'Purchase order deleted successfully!', 'success');
           fetchPurchaseOrders();
         } catch (error) {
@@ -109,10 +130,168 @@ const PurchaseOrders = () => {
     );
   };
 
+  // New function for printing purchase order
+  const handlePrintPurchaseOrder = async (purchaseOrderId) => {
+    try {
+      const purchaseOrderResponse = await axios.get(`/purchase-orders/${purchaseOrderId}`);
+      const purchaseOrder = purchaseOrderResponse.data;
+
+      const profileResponse = await axios.get('/profiles'); // Fetch company profile
+      const companyProfile = profileResponse.data.length > 0 ? profileResponse.data[0] : {};
+
+      if (!purchaseOrder) {
+        showErrorModal('Error', 'Purchase Order not found for printing', 'error');
+        return;
+      }
+
+      // Ensure purchaseOrder.items is an array for mapping
+      if (!purchaseOrder.items) {
+        purchaseOrder.items = [];
+      }
+
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        showErrorModal('Error', 'Please allow pop-ups for printing', 'error');
+        return;
+      }
+
+      const purchaseOrderHtml = `
+        <html>
+          <head>
+            <title>Purchase Order #${purchaseOrder.poNo}</title>
+            <style>
+              body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; }
+              .po-page { width: 210mm; min-height: 297mm; margin: 10mm auto; border: 1px solid #eee; background: #fff; padding: 20mm; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
+              .header-section { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
+              .company-info h1 { margin: 0; font-size: 28px; color: #333; }
+              .company-info p { margin: 2px 0; font-size: 14px; color: #555; }
+              .po-title { font-size: 40px; font-weight: bold; color: #333; margin-top: 0; }
+              .po-meta { margin-top: 10px; text-align: right; font-size: 14px; }
+              .po-meta div { margin-bottom: 5px; }
+
+              .address-section { display: flex; justify-content: space-between; margin-bottom: 30px; }
+              .address-box { border: 1px solid #eee; padding: 15px; width: 48%; }
+              .address-box h3 { margin-top: 0; font-size: 16px; color: #333; }
+              .address-box p { margin: 2px 0; font-size: 14px; color: #555; }
+
+              .item-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+              .item-table th, .item-table td { border: 1px solid #eee; padding: 10px; text-align: left; font-size: 14px; }
+              .item-table th { background-color: #f9f9f9; font-weight: bold; color: #333; }
+
+              .summary-section { display: flex; justify-content: flex-end; margin-bottom: 30px; }
+              .summary-box { width: 40%; border: 1px solid #eee; }
+              .summary-row { display: flex; justify-content: space-between; padding: 8px 15px; border-bottom: 1px solid #eee; }
+              .summary-row:last-child { border-bottom: none; }
+              .summary-row.total { background-color: #f2f2f2; font-weight: bold; font-size: 16px; }
+
+              .footer-section { text-align: center; font-size: 12px; color: #777; border-top: 1px solid #eee; padding-top: 15px; }
+              @media print {
+                .po-page { box-shadow: none; border: none; }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="po-page">
+              <div class="header-section">
+                <div class="company-info">
+                  ${companyProfile.logo ? `<img src="${companyProfile.logo}" alt="Company Logo" style="height: 60px; margin-bottom: 10px;"/>` : ''}
+                  <h1>${companyProfile.companyName || 'Your Company Name'}</h1>
+                  <p>${companyProfile.address || 'Your Company Address'}</p>
+                  <p>${companyProfile.city || 'City'}, ${companyProfile.state || 'State'} ${companyProfile.pinCode || 'PIN'}</p>
+                  <p>Email: ${companyProfile.email || 'N/A'} | Phone: ${companyProfile.phone || 'N/A'}</p>
+                  ${companyProfile.website ? `<p>Website: ${companyProfile.website}</p>` : ''}
+                  ${companyProfile.serviceTaxNo ? `<p>Service Tax No: ${companyProfile.serviceTaxNo}</p>` : ''}
+                </div>
+                <div>
+                  <h2 class="po-title">PURCHASE ORDER</h2>
+                  <div class="po-meta">
+                    <div><strong>PO No:</strong> ${purchaseOrder.poNo}</div>
+                    <div><strong>Order Date:</strong> ${new Date(purchaseOrder.orderDate).toLocaleDateString()}</div>
+                    <div><strong>Valid Until:</strong> ${new Date(purchaseOrder.validUntil).toLocaleDateString()}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="address-section">
+                <div class="address-box">
+                  <h3>Vendor:</h3>
+                  <p><strong>${purchaseOrder.vendor?.companyName || 'Vendor Name'}</strong></p>
+                  <p>${purchaseOrder.vendor?.billingAddress || 'Vendor Address'}</p>
+                  <p>${purchaseOrder.vendor?.city || 'City'}, ${purchaseOrder.vendor?.state || 'State'} ${purchaseOrder.vendor?.pinCode || 'PIN'}</p>
+                  <p>Email: ${purchaseOrder.vendor?.email || 'N/A'}</p>
+                  <p>Phone: ${purchaseOrder.vendor?.phone || 'N/A'}</p>
+                  ${purchaseOrder.vendor?.gstin ? `<p>GSTIN: ${purchaseOrder.vendor.gstin}</p>` : ''}
+                </div>
+                <div class="address-box">
+                  <h3>Ship To:</h3>
+                  <p><strong>${companyProfile.companyName || 'Your Company Name'}</strong></p>
+                  <p>${companyProfile.address || 'Your Company Address'}</p>
+                  <p>${companyProfile.city || 'City'}, ${companyProfile.state || 'State'} ${companyProfile.pinCode || 'PIN'}</p>
+                </div>
+              </div>
+
+              <table class="item-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Item & Description</th>
+                    <th>Qty</th>
+                    <th>Unit Price</th>
+                    <th>Discount</th>
+                    <th>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${(purchaseOrder.items || []).map((item, index) => `
+                    <tr>
+                      <td>${index + 1}</td>
+                      <td>
+                        <strong>${items.find(i => i.id.toString() === item.itemId)?.name || 'N/A'}</strong><br/>
+                        <span style="font-size: 12px; color: #777;">${item.description || ''}</span>
+                      </td>
+                      <td>${item.quantity} ${item.unit}</td>
+                      <td>${formatCurrency(item.price)}</td>
+                      <td>${item.discountPercent || '0'}%</td>
+                      <td>${formatCurrency(item.total)}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+
+              <div class="summary-section">
+                <div class="summary-box">
+                  <div class="summary-row"><span>Subtotal:</span><span>${formatCurrency(purchaseOrder.subtotal)}</span></div>
+                  <div class="summary-row total"><span>TOTAL:</span><span>${formatCurrency(purchaseOrder.total)}</span></div>
+                </div>
+              </div>
+
+              <div class="footer-section">
+                <p>${companyProfile.companyName || 'Your Company Name'} | ${companyProfile.address || 'Your Company Address'}</p>
+                <p>Email: ${companyProfile.email || 'N/A'} | Phone: ${companyProfile.phone || 'N/A'} | Website: ${companyProfile.website || 'N/A'}</p>
+                ${companyProfile.bankDetails && companyProfile.bankDetails.length > 0 ? `
+                  <p>Bank: ${companyProfile.bankDetails[0].bankName} | A/C No: ${companyProfile.bankDetails[0].accountNumber} | IFSC: ${companyProfile.bankDetails[0].ifscCode}</p>
+                ` : ''}
+                <p>Thank you for your business!</p>
+              </div>
+            </div>
+          </body>
+        </html>
+      `;
+
+      printWindow.document.write(purchaseOrderHtml);
+      printWindow.document.close();
+      printWindow.focus();
+      printWindow.print();
+
+    } catch (error) {
+      console.error('Error printing Purchase Order:', error);
+      showErrorModal('Error', getErrorMessage(error, 'Failed to print Purchase Order'), getErrorType(error));
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // Validate that we have at least one item
+    if (companyCodeMissing) return;
     if (formData.items.length === 0) {
       showErrorModal('Error', 'Please add at least one item to the purchase order', 'error');
       return;
@@ -120,13 +299,15 @@ const PurchaseOrders = () => {
     
     console.log('Submitting purchase order data:', formData);
     
-    // Prepare the data with proper types
+    // Prepare the data with proper types, do NOT include poNo
+    const { vendorId, orderDate, validUntil, subtotal, total, items } = formData;
     const purchaseOrderData = {
-      ...formData,
-      vendorId: parseInt(formData.vendorId),
-      subtotal: formData.subtotal,
-      total: formData.total,
-      items: formData.items.map(item => ({
+      vendorId: parseInt(vendorId),
+      orderDate,
+      validUntil,
+      subtotal,
+      total,
+      items: items.map(item => ({
         itemId: parseInt(item.itemId),
         unit: item.unit,
         quantity: item.quantity,
@@ -139,12 +320,12 @@ const PurchaseOrders = () => {
     
     try {
       if (editingPurchaseOrder) {
-        const response = await axios.put(`/purchase-orders/${editingPurchaseOrder.id}`, purchaseOrderData);
-        console.log('Update response:', response.data);
+        const _response = await axios.put(`/purchase-orders/${editingPurchaseOrder.id}`, purchaseOrderData);
+        console.log('Update response:', _response.data);
         showErrorModal('Success', 'Purchase order updated successfully!', 'success');
       } else {
-        const response = await axios.post('/purchase-orders', purchaseOrderData);
-        console.log('Create response:', response.data);
+        const _response = await axios.post('/purchase-orders', purchaseOrderData);
+        console.log('Create response:', _response.data);
         showErrorModal('Success', 'Purchase order created successfully!', 'success');
       }
       setShowModal(false);
@@ -317,12 +498,12 @@ const PurchaseOrders = () => {
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">PO #</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Vendor</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Date</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Expected Delivery</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Total</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Actions</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">PO #</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Vendor</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Date</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Expected Delivery</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Total</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -341,8 +522,18 @@ const PurchaseOrders = () => {
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex space-x-2">
-                          <button className="text-blue-600 hover:text-blue-800">👁️</button>
-                          <button className="text-green-600 hover:text-green-800">📄</button>
+                          <button 
+                            className="text-blue-600 hover:text-blue-800"
+                            onClick={() => handleEdit(po)}
+                          >
+                            ✏️
+                          </button>
+                          <button 
+                            className="text-green-600 hover:text-green-800"
+                            onClick={() => handlePrintPurchaseOrder(po.id)}
+                          >
+                            📄
+                          </button>
                           <button
                             onClick={() => {
                               console.log('Delete button clicked for purchase order ID:', po.id);
@@ -373,11 +564,12 @@ const PurchaseOrders = () => {
         <div className="modal-overlay" onClick={() => console.log('Modal overlay clicked')}>
           <div className="modal-container" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">Create New Purchase Order</h3>
+              <h3 className="modal-title">{editingPurchaseOrder ? 'Edit Purchase Order' : 'Create New Purchase Order'}</h3>
               <button
                 onClick={() => {
                   console.log('Closing modal');
                   setShowModal(false);
+                  setEditingPurchaseOrder(null);
                   resetForm();
                 }}
                 className="modal-close"
@@ -406,15 +598,10 @@ const PurchaseOrders = () => {
                     </select>
                   </div>
                   <div className="form-group">
-                    <label className="form-label">PO Number *</label>
-                    <input
-                      type="text"
-                      name="poNo"
+                    <ReadOnlyDocumentNumber
+                      label="PO Number *"
                       value={formData.poNo}
-                      onChange={(e) => setFormData({...formData, poNo: e.target.value})}
-                      className="form-input"
-                      placeholder="PO-001"
-                      required
+                      tooltip="This number is auto-generated by the system and cannot be changed."
                     />
                   </div>
                   <div className="form-group">
@@ -604,10 +791,15 @@ const PurchaseOrders = () => {
                   >
                     Cancel
                   </button>
-                  <button type="submit" className="btn btn-primary">
+                  <button type="submit" className="btn btn-primary" disabled={companyCodeMissing || profileLoading}>
                     {editingPurchaseOrder ? 'Update' : 'Create'} Purchase Order
                   </button>
                 </div>
+                {companyCodeMissing && !profileLoading && (
+                  <div className="text-red-600 text-sm mt-2">
+                    Please set your <b>Company Code</b> in the <a href="/profile" className="underline">profile</a> before creating purchase orders.
+                  </div>
+                )}
               </form>
             </div>
           </div>

@@ -9,6 +9,7 @@ const DebitNotes = () => {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [editingDebitNote, setEditingDebitNote] = useState(null);
   const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '', type: 'error' });
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
   const [formData, setFormData] = useState({
@@ -94,6 +95,120 @@ const DebitNotes = () => {
     );
   };
 
+  const handlePrintDebitNote = async (debitNoteId) => {
+    try {
+      console.log('Attempting to print Debit Note...', debitNoteId);
+      const debitNoteResponse = await axios.get(`/debit-notes/${debitNoteId}`);
+      const debitNote = debitNoteResponse.data;
+
+      const profileResponse = await axios.get('/profiles'); // Fetch company profile
+      const companyProfile = profileResponse.data.length > 0 ? profileResponse.data[0] : {};
+
+      if (!debitNote) {
+        showErrorModal('Error', 'Debit Note not found for printing', 'error');
+        return;
+      }
+
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        showErrorModal('Error', 'Please allow pop-ups for printing', 'error');
+        return;
+      }
+
+      const debitNoteHtml = `
+        <html>
+          <head>
+            <title>Debit Note #${debitNote.docNo}</title>
+            <style>
+              body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; }
+              .note-page { width: 210mm; min-height: 297mm; margin: 10mm auto; border: 1px solid #eee; background: #fff; padding: 20mm; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
+              .header-section { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
+              .company-info h1 { margin: 0; font-size: 28px; color: #333; }
+              .company-info p { margin: 2px 0; font-size: 14px; color: #555; }
+              .note-title { font-size: 40px; font-weight: bold; color: #333; margin-top: 0; }
+              .note-meta { margin-top: 10px; text-align: right; font-size: 14px; }
+              .note-meta div { margin-bottom: 5px; }
+
+              .details-section { margin-bottom: 30px; border: 1px solid #eee; padding: 15px; }
+              .details-section h3 { margin-top: 0; font-size: 16px; color: #333; margin-bottom: 10px; }
+              .details-section p { margin: 2px 0; font-size: 14px; color: #555; }
+
+              .amount-section { text-align: right; margin-bottom: 30px; }
+              .amount-box { display: inline-block; border: 1px solid #eee; padding: 15px; background-color: #f9f9f9; }
+              .amount-box strong { font-size: 24px; color: #333; }
+
+              .description-section { font-size: 14px; color: #555; margin-bottom: 30px; }
+
+              .footer-section { text-align: center; font-size: 12px; color: #777; border-top: 1px solid #eee; padding-top: 15px; }
+              @media print {
+                .note-page { box-shadow: none; border: none; }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="note-page">
+              <div class="header-section">
+                <div class="company-info">
+                  ${companyProfile.logo ? `<img src="${companyProfile.logo}" alt="Company Logo" style="height: 60px; margin-bottom: 10px;"/>` : ''}
+                  <h1>${companyProfile.companyName || 'Your Company Name'}</h1>
+                  <p>${companyProfile.address || 'Your Company Address'}</p>
+                  <p>${companyProfile.city || 'City'}, ${companyProfile.state || 'State'} ${companyProfile.pinCode || 'PIN'}</p>
+                  <p>Email: ${companyProfile.email || 'N/A'} | Phone: ${companyProfile.phone || 'N/A'}</p>
+                  ${companyProfile.website ? `<p>Website: ${companyProfile.website}</p>` : ''}
+                  ${companyProfile.serviceTaxNo ? `<p>Service Tax No: ${companyProfile.serviceTaxNo}</p>` : ''}
+                </div>
+                <div>
+                  <h2 class="note-title">DEBIT NOTE</h2>
+                  <div class="note-meta">
+                    <div><strong>Debit Note No:</strong> ${debitNote.docNo || 'N/A'}</div>
+                    <div><strong>Issue Date:</strong> ${new Date(debitNote.issueDate).toLocaleDateString()}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="details-section">
+                <h3>Client Details:</h3>
+                <p><strong>Company Name:</strong> ${debitNote.client?.companyName || 'N/A'}</p>
+                <p><strong>Address:</strong> ${debitNote.client?.billingAddress || 'N/A'}, ${debitNote.client?.city || 'N/A'}, ${debitNote.client?.state || 'N/A'} ${debitNote.client?.pinCode || 'N/A'}</p>
+                <p><strong>Email:</strong> ${debitNote.client?.email || 'N/A'}</p>
+                <p><strong>Phone:</strong> ${debitNote.client?.phone || 'N/A'}</p>
+              </div>
+
+              <div class="amount-section">
+                <div class="amount-box">
+                  Total Debit: <strong>${formatCurrency(debitNote.amount)}</strong>
+                </div>
+              </div>
+
+              ${debitNote.description ? `<div class="description-section">
+                <strong>Description:</strong>
+                <p>${debitNote.description}</p>
+              </div>` : ''}
+
+              <div class="footer-section">
+                <p>${companyProfile.companyName || 'Your Company Name'} | ${companyProfile.address || 'Your Company Address'}</p>
+                <p>Email: ${companyProfile.email || 'N/A'} | Phone: ${companyProfile.phone || 'N/A'} | Website: ${companyProfile.website || 'N/A'}</p>
+                ${companyProfile.bankDetails && companyProfile.bankDetails.length > 0 ? `
+                  <p>Bank: ${companyProfile.bankDetails[0].bankName} | A/C No: ${companyProfile.bankDetails[0].accountNumber} | IFSC: ${companyProfile.bankDetails[0].ifscCode}</p>
+                ` : ''}
+                <p>Thank you!</p>
+              </div>
+            </div>
+          </body>
+        </html>
+      `;
+
+      printWindow.document.write(debitNoteHtml);
+      printWindow.document.close();
+      printWindow.focus();
+      printWindow.print();
+
+    } catch (error) {
+      console.error('Error printing Debit Note:', error);
+      showErrorModal('Error', getErrorMessage(error, 'Failed to print Debit Note'), getErrorType(error));
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     console.log('Submitting debit note data:', formData);
@@ -106,10 +221,17 @@ const DebitNotes = () => {
     };
     
     try {
-      const response = await axios.post('/debit-notes', debitNoteData);
-      console.log('Create response:', response.data);
-      showErrorModal('Success', 'Debit note created successfully!', 'success');
+      if (editingDebitNote) {
+        const response = await axios.put(`/debit-notes/${editingDebitNote.id}`, debitNoteData);
+        console.log('Update response:', response.data);
+        showErrorModal('Success', 'Debit note updated successfully!', 'success');
+      } else {
+        const response = await axios.post('/debit-notes', debitNoteData);
+        console.log('Create response:', response.data);
+        showErrorModal('Success', 'Debit note created successfully!', 'success');
+      }
       setShowModal(false);
+      setEditingDebitNote(null);
       resetForm();
       fetchDebitNotes();
     } catch (error) {
@@ -133,6 +255,17 @@ const DebitNotes = () => {
       style: 'currency',
       currency: 'INR'
     }).format(amount || 0);
+  };
+
+  const handleEdit = (debitNote) => {
+    setEditingDebitNote(debitNote);
+    setFormData({
+      clientId: debitNote.clientId,
+      issueDate: debitNote.issueDate,
+      amount: debitNote.amount,
+      description: debitNote.description || ''
+    });
+    setShowModal(true);
   };
 
   if (loading) {
@@ -161,6 +294,8 @@ const DebitNotes = () => {
           onClick={() => {
             console.log('Opening modal for new debit note');
             setShowModal(true);
+            setEditingDebitNote(null); // Ensure no debit note is being edited when opening for creation
+            resetForm();
           }}
           className="btn btn-primary"
         >
@@ -176,12 +311,12 @@ const DebitNotes = () => {
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Debit Note #</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Client</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Date</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Amount</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Description</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Actions</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Debit Note #</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Client</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Date</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Amount</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Description</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -198,11 +333,33 @@ const DebitNotes = () => {
                       <td className="py-3 px-4">{debitNote.description || 'N/A'}</td>
                       <td className="py-3 px-4">
                         <div className="flex space-x-2">
-                          <button className="text-blue-600 hover:text-blue-800">👁️</button>
-                          <button className="text-green-600 hover:text-green-800">📄</button>
+                          <button 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleEdit(debitNote);
+                            }}
+                            className="text-blue-600 hover:text-blue-800"
+                          >
+                            ✏️
+                          </button>
+                          <button 
+                            className="text-green-600 hover:text-green-800 p-2 rounded hover:bg-green-50 transition-colors"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handlePrintDebitNote(debitNote.id);
+                            }}
+                            type="button"
+                            title="Print Debit Note"
+                            aria-label="Print Debit Note"
+                          >
+                            📄
+                          </button>
                           <button
-                            onClick={() => {
-                              console.log('Delete button clicked for debit note ID:', debitNote.id);
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
                               handleDelete(debitNote.id);
                             }}
                             className="text-red-600 hover:text-red-800"
@@ -218,7 +375,7 @@ const DebitNotes = () => {
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500">
-              <span className="text-4xl mb-4 block">📝</span>
+              <span className="text-4xl mb-4 block"></span>
               <p>No debit notes found</p>
             </div>
           )}
@@ -230,11 +387,14 @@ const DebitNotes = () => {
         <div className="modal-overlay" onClick={() => console.log('Modal overlay clicked')}>
           <div className="modal-container" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">Create New Debit Note</h3>
+              <h3 className="modal-title">
+                {editingDebitNote ? 'Edit Debit Note' : 'Create New Debit Note'}
+              </h3>
               <button
                 onClick={() => {
                   console.log('Closing modal');
                   setShowModal(false);
+                  setEditingDebitNote(null);
                   resetForm();
                 }}
                 className="modal-close"
@@ -304,6 +464,7 @@ const DebitNotes = () => {
                     type="button"
                     onClick={() => {
                       setShowModal(false);
+                      setEditingDebitNote(null);
                       resetForm();
                     }}
                     className="btn btn-secondary"
@@ -311,7 +472,7 @@ const DebitNotes = () => {
                     Cancel
                   </button>
                   <button type="submit" className="btn btn-primary">
-                    Create Debit Note
+                    {editingDebitNote ? 'Update Debit Note' : 'Create Debit Note'}
                   </button>
                 </div>
               </form>

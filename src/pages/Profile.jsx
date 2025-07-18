@@ -22,7 +22,8 @@ const Profile = () => {
     serviceTaxNo: '',
     website: '',
     taxationType: '',
-    contactName: ''
+    contactName: '',
+    companyCode: ''
   });
 
   useEffect(() => {
@@ -49,7 +50,8 @@ const Profile = () => {
           serviceTaxNo: profileData.serviceTaxNo || '',
           website: profileData.website || '',
           taxationType: profileData.taxationType || '',
-          contactName: profileData.contactName || ''
+          contactName: profileData.contactName || '',
+          companyCode: profileData.companyCode || ''
         });
       }
     } catch (error) {
@@ -146,6 +148,10 @@ const Profile = () => {
                 <div>
                   <label className="text-sm font-medium text-gray-600">Company Name</label>
                   <p className="text-gray-900">{profile.companyName}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-600">Company Code</label>
+                  <p className="text-gray-900">{profile.companyCode || 'Not specified'}</p>
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-600">Contact Person</label>
@@ -276,6 +282,27 @@ const Profile = () => {
                       className="form-input"
                       required
                     />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label flex items-center">
+                      Company Code *
+                      <span className="ml-1 text-xs text-gray-400" title="This code is used in all document numbers (e.g., XX-2526-IV-001)">
+                        ⓘ
+                      </span>
+                    </label>
+                    <input
+                      type="text"
+                      name="companyCode"
+                      value={formData.companyCode || ''}
+                      onChange={(e) => setFormData({...formData, companyCode: e.target.value})}
+                      className="form-input font-mono"
+                      required
+                      maxLength={8}
+                      placeholder="E.g. XX"
+                    />
+                    <div className="text-xs text-gray-500 mt-1">
+                      Used as the prefix in all document numbers. Example: <span className="font-mono">XX-2526-IV-001</span>
+                    </div>
                   </div>
                   <div className="form-group">
                     <label className="form-label">Contact Person</label>

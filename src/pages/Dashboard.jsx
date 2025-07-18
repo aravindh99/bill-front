@@ -12,6 +12,16 @@ const Dashboard = () => {
   });
   const [recentInvoices, setRecentInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Date range dropdown state
+  const [dateRange, setDateRange] = useState('today');
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  const dateRangeOptions = [
+    { value: 'today', label: 'Today' },
+    { value: 'week', label: 'This Week' },
+    { value: 'month', label: 'This Month' },
+    { value: 'year', label: 'This Year' }
+  ];
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -81,10 +91,39 @@ const Dashboard = () => {
 
   return (
     <div className="p-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-600">Welcome back, {user?.name || 'User'}!</p>
+      {/* Header + Date Range Dropdown */}
+      <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+          <p className="text-gray-600">Welcome back, {user?.name || 'User'}!</p>
+        </div>
+        {/* Date Range Dropdown */}
+        <div className="relative mt-4 md:mt-0">
+          <button
+            onClick={() => setShowDropdown((v) => !v)}
+            className="flex items-center px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm text-gray-700 font-medium hover:bg-gray-50 focus:outline-none"
+          >
+            <span className="mr-2">
+              {dateRangeOptions.find(opt => opt.value === dateRange)?.label || 'Today'}
+            </span>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {showDropdown && (
+            <div className="absolute right-0 mt-2 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+              {dateRangeOptions.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => { setDateRange(opt.value); setShowDropdown(false); }}
+                  className={`w-full text-left px-4 py-2 hover:bg-gray-100 ${dateRange === opt.value ? 'font-semibold text-purple-700' : 'text-gray-700'}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -157,11 +196,11 @@ const Dashboard = () => {
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Invoice #</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Client</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Amount</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Status</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Date</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Invoice #</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Client</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Amount</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Status</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Date</th>
                   </tr>
                 </thead>
                 <tbody>

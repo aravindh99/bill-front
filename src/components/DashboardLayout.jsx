@@ -8,6 +8,7 @@ const DashboardLayout = ({ children }) => {
   const navigate = useNavigate();
   const { logout, user } = useAuth();
   const [showHelp, setShowHelp] = useState(false);
+  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
 
   const navigationItems = [
     { name: 'Dashboard', path: '/dashboard', icon: '📊' },
@@ -33,7 +34,7 @@ const DashboardLayout = ({ children }) => {
   };
 
   const renderHeader = () => (
-    <div className="dashboard-header">
+    <div className="dashboard-header relative">
       <div className="flex items-center">
         <h1 className="dashboard-title">Billing System</h1>
       </div>
@@ -46,16 +47,49 @@ const DashboardLayout = ({ children }) => {
           <span className="mr-2">❓</span>
           Help
         </button>
-        <div className="text-sm text-gray-600">
-          Welcome, {user?.name || 'User'}
+        {/* Profile Icon with Dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setShowProfileDropdown((v) => !v)}
+            className="flex items-center justify-center w-10 h-10 rounded-full focus:outline-none"
+            title="Profile"
+            style={{
+              background: 'linear-gradient(135deg, #211531, #9254de)',
+              boxShadow: '0 2px 8px rgba(64,18,178,0.10)'
+            }}
+          >
+            {/* Modern SVG User Icon */}
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="14" cy="14" r="14" fill="url(#profile-gradient)" />
+              <g filter="url(#shadow)">
+                <ellipse cx="14" cy="11" rx="5" ry="5" fill="#fff" fillOpacity="0.95" />
+                <ellipse cx="14" cy="20" rx="7" ry="4" fill="#fff" fillOpacity="0.85" />
+              </g>
+              <defs>
+                <linearGradient id="profile-gradient" x1="0" y1="0" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#211531" />
+                  <stop offset="1" stopColor="#9254de" />
+                </linearGradient>
+                <filter id="shadow" x="0" y="0" width="28" height="28" filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
+                  <feDropShadow dx="0" dy="1" stdDeviation="1" floodColor="#4012b2" floodOpacity="0.10" />
+                </filter>
+              </defs>
+            </svg>
+          </button>
+          {showProfileDropdown && (
+            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-2 z-50 border border-gray-200">
+              <div className="px-4 py-2 text-gray-700 border-b border-gray-100">
+                <span className="font-semibold">{user?.name || 'User'}</span>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="w-full text-left px-4 py-2 text-red-600 hover:bg-gray-100"
+              >
+                <span className="mr-2">🚪</span> Logout
+              </button>
+            </div>
+          )}
         </div>
-        <button
-          onClick={handleLogout}
-          className="btn btn-secondary text-sm"
-        >
-          <span className="mr-2">🚪</span>
-          Logout
-        </button>
       </div>
     </div>
   );

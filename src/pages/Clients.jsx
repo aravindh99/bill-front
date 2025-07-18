@@ -190,7 +190,7 @@ const Clients = () => {
         </div>
         <button
           onClick={() => {
-            console.log('Opening modal for new client');
+           
             setShowModal(true);
           }}
           className="btn btn-primary"
@@ -219,12 +219,12 @@ const Clients = () => {
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Company</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Contact</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Email</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">City</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Type</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Actions</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Company</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Contact</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Email</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">City</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Type</th>
+                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
