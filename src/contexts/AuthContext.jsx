@@ -31,50 +31,51 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Set up axios defaults - use relative URLs to work with Vite proxy
-  axios.defaults.baseURL = '';
+  // Set up axios defaults - use env for prod and relative in dev
+  axios.defaults.baseURL = import.meta.env.VITE_API_BASE_URL || '';
 
   // Check for JWT token in URL and localStorage
   useEffect(() => {
     const checkAuth = () => {
-      // DEVELOPMENT MODE: Use valid JWT token
-      // TODO: Remove this when implementing real authentication
-      const validDevToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwibmFtZSI6IkRldmVsb3BtZW50IFVzZXIiLCJyb2xlIjoiYWRtaW4iLCJlbWFpbCI6ImRldkBleGFtcGxlLmNvbSIsImlhdCI6MTc1MDMzMDcxNywiZXhwIjoxNzU4OTcwNzE3fQ.lTAjsuminCb0QjP38KE_mN8sSagCXgb3vGpO630Mn8w';
-      
-      const dummyUser = {
-        id: 1,
-        name: 'Development User',
-        role: 'admin',
-        email: 'dev@example.com'
-      };
-      
-      setUser(dummyUser);
-      setIsAuthenticated(true);
-      setLoading(false);
-      
-      // Set the valid JWT token for API calls
-      axios.defaults.headers.common['Authorization'] = `Bearer ${validDevToken}`;
-      
-      // Also set up an axios interceptor to ensure token is always included
-      axios.interceptors.request.use(
-        (config) => {
-          // Add token to all requests
-          if (!config.headers.Authorization) {
-            config.headers.Authorization = `Bearer ${validDevToken}`;
+      if (import.meta.env.DEV) {
+        // DEVELOPMENT MODE: Use valid JWT token
+        const validDevToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwibmFtZSI6IkRldmVsb3BtZW50IFVzZXIiLCJyb2xlIjoiYWRtaW4iLCJlbWFpbCI6ImRldkBleGFtcGxlLmNvbSIsImlhdCI6MTc1MDMzMDcxNywiZXhwIjoxNzU4OTcwNzE3fQ.lTAjsuminCb0QjP38KE_mN8sSagCXgb3vGpO630Mn8w';
+
+        const dummyUser = {
+          id: 1,
+          name: 'Development User',
+          role: 'admin',
+          email: 'dev@example.com'
+        };
+
+        setUser(dummyUser);
+        setIsAuthenticated(true);
+        setLoading(false);
+
+        // Set the valid JWT token for API calls
+        axios.defaults.headers.common['Authorization'] = `Bearer ${validDevToken}`;
+
+        // Also set up an axios interceptor to ensure token is always included
+        axios.interceptors.request.use(
+          (config) => {
+            // Add token to all requests
+            if (!config.headers.Authorization) {
+              config.headers.Authorization = `Bearer ${validDevToken}`;
+            }
+            return config;
+          },
+          (error) => {
+            return Promise.reject(error);
           }
-          return config;
-        },
-        (error) => {
-          return Promise.reject(error);
-        }
-      );
-      
-      // Comment out the real authentication logic for now
-      /*
-      // First check URL parameters for token
+        );
+
+        return;
+      }
+
+      // PRODUCTION: First check URL parameters for token
       const urlParams = new URLSearchParams(window.location.search);
       const urlToken = urlParams.get('token');
-      
+
       if (urlToken) {
         // Store token from URL
         localStorage.setItem('token', urlToken);
@@ -84,7 +85,7 @@ export const AuthProvider = ({ children }) => {
 
       // Check localStorage for token
       const token = localStorage.getItem('token');
-      
+
       if (token) {
         const decodedToken = decodeToken(token);
         if (decodedToken && decodedToken.exp * 1000 > Date.now()) {
@@ -103,9 +104,8 @@ export const AuthProvider = ({ children }) => {
           delete axios.defaults.headers.common['Authorization'];
         }
       }
-      
+
       setLoading(false);
-      */
     };
 
     checkAuth();

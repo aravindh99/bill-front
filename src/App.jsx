@@ -57,11 +57,14 @@ const LoadingScreen = () => (
 const AuthCheck = () => {
   const { isAuthenticated, loading } = useAuth();
 
-  if (loading) {
+  // For portfolio demo, bypass auth completely in production
+  const demoBypass = true;
+
+  if (loading && !demoBypass) {
     return <LoadingScreen />;
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !demoBypass) {
     return (
       <div className="auth-split-layout">
         <div className="auth-split-left">
