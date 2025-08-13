@@ -1,1 +1,1 @@
-https://bill-front-5mio.vercel.app/
+bill-front-beta.vercel.app
