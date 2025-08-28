@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
+import { API_BASE_URL } from '../config/api';
 
 const AuthContext = createContext();
 
@@ -31,8 +32,8 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Set up axios defaults - use env for prod and relative in dev
-  axios.defaults.baseURL = import.meta.env.VITE_API_BASE_URL || '';
+  // Set up axios defaults using centralized configuration
+  axios.defaults.baseURL = API_BASE_URL;
 
   // Check for JWT token in URL and localStorage
   useEffect(() => {

@@ -2,7 +2,11 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import ModernModal from '../components/ModernModal';
 import ConfirmModal from '../components/ConfirmModal';
+import Pagination from '../components/Pagination';
+import usePagination from '../hooks/usePagination';
 import { formatRelatedRecords, getErrorMessage, getErrorType } from '../utils/errorHelpers.jsx';
+import ActionButton from '../components/ActionButton';
+import DataTable from '../components/DataTable'; // Added import for DataTable
 
 const Clients = () => {
   const [clients, setClients] = useState([]);
@@ -29,9 +33,72 @@ const Clients = () => {
     isVendor: false
   });
 
+  // Filter clients based on search term
+  const filteredClients = clients.filter(client =>
+    client.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    client.contactName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    client.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    client.phone?.includes(searchTerm)
+  );
+
+  // Use pagination hook with filtered data
+  const {
+    currentPage,
+    totalPages,
+    paginatedData: paginatedClients,
+    totalItems,
+    itemsPerPage,
+    handlePageChange,
+    handleItemsPerPageChange,
+    resetToFirstPage
+  } = usePagination(filteredClients, 25);
+
+  const columns = [
+    {
+      key: 'companyName',
+      header: 'Company',
+      render: (value, client) => (
+        <div>
+          <div className="text-sm font-medium text-gray-900">{client.companyName}</div>
+          {client.city && <div className="text-sm text-gray-500">{client.city}</div>}
+        </div>
+      )
+    },
+    {
+      key: 'contactName',
+      header: 'Contact',
+      render: (value) => value || '-'
+    },
+    {
+      key: 'email',
+      header: 'Email',
+      render: (value) => value || '-'
+    },
+    {
+      key: 'phone',
+      header: 'Phone',
+      render: (value) => value || '-'
+    },
+    {
+      key: 'gstin',
+      header: 'GSTIN',
+      render: (value) => value || '-'
+    },
+    {
+      key: 'openingBalance',
+      header: 'Opening Balance',
+      render: (value) => `₹${parseFloat(value || 0).toFixed(2)}`
+    }
+  ];
+
   useEffect(() => {
     fetchClients();
   }, []);
+
+  // Reset pagination when search term changes
+  useEffect(() => {
+    resetToFirstPage();
+  }, [searchTerm, resetToFirstPage]);
 
   const fetchClients = async () => {
     try {
@@ -70,6 +137,7 @@ const Clients = () => {
       setEditingClient(null);
       resetForm();
       fetchClients();
+      resetToFirstPage(); // Reset pagination after data change
     } catch (error) {
       console.error('Error saving client:', error);
       console.error('Error response:', error.response?.data);
@@ -112,6 +180,7 @@ const Clients = () => {
           console.log('Delete response:', response.data);
           showErrorModal('Success', 'Client deleted successfully!', 'success');
           fetchClients();
+          resetToFirstPage(); // Reset pagination after deletion
         } catch (error) {
           console.error('Error deleting client:', error);
           console.error('Error response:', error.response?.data);
@@ -139,6 +208,55 @@ const Clients = () => {
     );
   };
 
+  const handlePrint = (client) => {
+    // Create a new window for printing
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Client - ${client.companyName}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; margin-bottom: 30px; }
+            .client-details { margin-bottom: 20px; }
+            .address-details { margin-bottom: 20px; }
+            .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #666; }
+            @media print { body { margin: 0; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>CLIENT DETAILS</h1>
+            <h2>${client.companyName}</h2>
+          </div>
+          
+          <div class="client-details">
+            <p><strong>Company Name:</strong> ${client.companyName}</p>
+            <p><strong>Contact Person:</strong> ${client.contactPerson || 'N/A'}</p>
+            <p><strong>Email:</strong> ${client.email}</p>
+            <p><strong>Phone:</strong> ${client.phone}</p>
+            <p><strong>Website:</strong> ${client.website || 'N/A'}</p>
+            <p><strong>GSTIN:</strong> ${client.gstin || 'N/A'}</p>
+          </div>
+          
+          <div class="address-details">
+            <h3>Billing Address:</h3>
+            <p>${client.billingAddress || 'N/A'}</p>
+            <p>${client.city || ''}, ${client.state || ''} ${client.pinCode || ''}</p>
+            <p>${client.country || 'India'}</p>
+          </div>
+          
+          <div class="footer">
+            <p>This is a client information document</p>
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+  };
+
   const resetForm = () => {
     setFormData({
       companyName: '',
@@ -157,12 +275,6 @@ const Clients = () => {
       isVendor: false
     });
   };
-
-  const filteredClients = clients.filter(client =>
-    client.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    client.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    client.phone.includes(searchTerm)
-  );
 
   if (loading) {
     return (
@@ -183,103 +295,74 @@ const Clients = () => {
   return (
     <div className="p-8">
       {/* Header */}
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Clients</h1>
-          <p className="text-gray-600">Manage your clients and vendors</p>
+          <p className="text-gray-600 mt-2">Manage your client relationships</p>
         </div>
         <button
-          onClick={() => {
-           
-            setShowModal(true);
-          }}
-          className="btn btn-primary"
+          onClick={() => setShowModal(true)}
+          className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center gap-2"
         >
-          <span className="mr-2">➕</span>
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+          </svg>
           Add Client
         </button>
       </div>
 
-      {/* Search */}
-      <div className="mb-6">
-        <input
-          type="text"
-          placeholder="Search clients..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="form-input w-full md:w-1/3"
-        />
+      {/* Search and Filters */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-1">
+            <label htmlFor="search" className="block text-sm font-medium text-gray-700 mb-2">
+              Search Clients
+            </label>
+            <input
+              type="text"
+              id="search"
+              placeholder="Search by company name, contact, email, or phone..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Results Summary */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+          <div className="text-sm text-gray-600">
+            Found {totalItems} client{totalItems !== 1 ? 's' : ''}
+            {searchTerm && ` matching "${searchTerm}"`}
+          </div>
+          <div className="text-sm text-gray-600">
+            Page {currentPage} of {totalPages}
+          </div>
+        </div>
       </div>
 
       {/* Clients Table */}
-      <div className="card">
-        <div className="card-content">
-          {filteredClients.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Company</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Contact</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Email</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">City</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Type</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredClients.map((client) => (
-                    <tr key={client.id} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4">
-                        <div>
-                          <div className="font-medium">{client.companyName}</div>
-                          {client.gstin && (
-                            <div className="text-sm text-gray-500">GST: {client.gstin}</div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4">{client.phone}</td>
-                      <td className="py-3 px-4">{client.email}</td>
-                      <td className="py-3 px-4">{client.city || '-'}</td>
-                      <td className="py-3 px-4">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          client.isVendor ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
-                        }`}>
-                          {client.isVendor ? 'Vendor' : 'Client'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => handleEdit(client)}
-                            className="text-blue-600 hover:text-blue-800"
-                          >
-                            ✏️
-                          </button>
-                          <button
-                            onClick={() => {
-                              console.log('Delete button clicked for client ID:', client.id);
-                              handleDelete(client.id);
-                            }}
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <span className="text-4xl mb-4 block">👥</span>
-              <p>No clients found</p>
-            </div>
-          )}
-        </div>
-      </div>
+      <DataTable
+        columns={columns}
+        data={paginatedClients}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        onPrint={handlePrint}
+        emptyMessage="No clients found"
+        emptyIcon="👥"
+      />
+
+      {/* Pagination */}
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={handlePageChange}
+        totalItems={totalItems}
+        itemsPerPage={itemsPerPage}
+        onItemsPerPageChange={handleItemsPerPageChange}
+      />
 
       {/* Modal */}
       {showModal && (
@@ -403,20 +486,24 @@ const Clients = () => {
                   </span>
                 </div>
                 <div className="flex justify-end space-x-3 pt-4">
-                  <button
-                    type="button"
+                  <ActionButton
                     onClick={() => {
                       setShowModal(false);
                       setEditingClient(null);
                       resetForm();
                     }}
-                    className="btn btn-secondary"
+                    variant="secondary"
+                    size="md"
                   >
                     Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary">
-                    {editingClient ? 'Update' : 'Create'} Client
-                  </button>
+                  </ActionButton>
+                  <ActionButton
+                    type="submit"
+                    variant="primary"
+                    size="md"
+                  >
+                    {editingClient ? 'Update Client' : 'Create Client'}
+                  </ActionButton>
                 </div>
               </form>
             </div>

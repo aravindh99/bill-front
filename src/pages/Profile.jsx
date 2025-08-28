@@ -1,29 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import ActionButton from '../components/ActionButton';
 import ModernModal from '../components/ModernModal';
-import { getErrorMessage, getErrorType } from '../utils/errorHelpers.jsx';
+import { getErrorMessage, getErrorType } from '../utils/errorHelpers';
 
 const Profile = () => {
   const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '', type: 'error' });
   const [formData, setFormData] = useState({
-    logo: '',
     companyName: '',
-    country: '',
-    city: '',
-    pinCode: '',
-    defaultCurrency: 'INR',
-    state: '',
-    address: '',
+    companyCode: '',
+    contactName: '',
     email: '',
     phone: '',
-    serviceTaxNo: '',
     website: '',
+    address: '',
+    city: '',
+    state: '',
+    country: '',
+    pinCode: '',
     taxationType: '',
-    contactName: '',
-    companyCode: ''
+    gstin: '',
+    logo: ''
   });
 
   useEffect(() => {
@@ -34,25 +34,8 @@ const Profile = () => {
     try {
       const response = await axios.get('/profiles');
       if (response.data.length > 0) {
-        const profileData = response.data[0];
-        setProfile(profileData);
-        setFormData({
-          logo: profileData.logo || '',
-          companyName: profileData.companyName || '',
-          country: profileData.country || '',
-          city: profileData.city || '',
-          pinCode: profileData.pinCode || '',
-          defaultCurrency: profileData.defaultCurrency || 'INR',
-          state: profileData.state || '',
-          address: profileData.address || '',
-          email: profileData.email || '',
-          phone: profileData.phone || '',
-          serviceTaxNo: profileData.serviceTaxNo || '',
-          website: profileData.website || '',
-          taxationType: profileData.taxationType || '',
-          contactName: profileData.contactName || '',
-          companyCode: profileData.companyCode || ''
-        });
+        setProfile(response.data[0]);
+        setFormData(response.data[0]);
       }
     } catch (error) {
       console.error('Error fetching profile:', error);
@@ -62,39 +45,33 @@ const Profile = () => {
     }
   };
 
-  const showErrorModal = (title, message, type = 'error') => {
-    setErrorModal({ isOpen: true, title, message, type });
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       if (profile) {
         await axios.put(`/profiles/${profile.id}`, formData);
-        showErrorModal('Success', 'Profile updated successfully!', 'success');
       } else {
-        const response = await axios.post('/profiles', formData);
-        showErrorModal('Success', 'Profile created successfully!', 'success');
-        // Update the profile state with the newly created profile
-        setProfile(response.data.profile);
+        await axios.post('/profiles', formData);
       }
+      await fetchProfile();
       setShowModal(false);
-      fetchProfile();
+      showErrorModal('Success', 'Profile updated successfully!', 'success');
     } catch (error) {
       console.error('Error saving profile:', error);
       showErrorModal('Error', getErrorMessage(error, 'Failed to save profile'), getErrorType(error));
     }
   };
 
-  const handleLogoChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setFormData({ ...formData, logo: e.target.result });
-      };
-      reader.readAsDataURL(file);
-    }
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const showErrorModal = (title, message, type = 'error') => {
+    setErrorModal({ isOpen: true, title, message, type });
   };
 
   if (loading) {
@@ -102,9 +79,9 @@ const Profile = () => {
       <div className="p-8">
         <div className="animate-pulse">
           <div className="h-8 bg-gray-200 rounded w-1/4 mb-8"></div>
-          <div className="space-y-4">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="h-16 bg-gray-200 rounded"></div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {[1, 2].map((i) => (
+              <div key={i} className="h-64 bg-gray-200 rounded"></div>
             ))}
           </div>
         </div>
@@ -114,26 +91,29 @@ const Profile = () => {
 
   return (
     <div className="p-8">
-      <div className="flex justify-between items-center mb-8">
+      {/* Header */}
+      <div className="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Company Profile</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Profile</h1>
           <p className="text-gray-600">Manage your company information</p>
         </div>
-        <button
+        <ActionButton
           onClick={() => setShowModal(true)}
-          className="btn btn-primary"
+          variant="primary"
+          size="md"
         >
           <span className="mr-2">✏️</span>
           {profile ? 'Edit Profile' : 'Create Profile'}
-        </button>
+        </ActionButton>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="card">
-          <div className="card-header">
-            <h2 className="card-title">Company Information</h2>
+        {/* Company Information */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="text-xl font-semibold text-gray-900">Company Information</h2>
           </div>
-          <div className="card-content">
+          <div className="p-6">
             {profile ? (
               <div className="space-y-4">
                 {profile.logo && (
@@ -178,22 +158,25 @@ const Profile = () => {
               <div className="text-center py-8 text-gray-500">
                 <span className="text-4xl mb-4 block">🏢</span>
                 <p>No profile information found</p>
-                <button
+                <ActionButton
                   onClick={() => setShowModal(true)}
-                  className="btn btn-primary mt-4"
+                  variant="primary"
+                  size="md"
+                  className="mt-4"
                 >
                   Create Profile
-                </button>
+                </ActionButton>
               </div>
             )}
           </div>
         </div>
 
-        <div className="card">
-          <div className="card-header">
-            <h2 className="card-title">Address & Tax Information</h2>
+        {/* Address & Tax Information */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="text-xl font-semibold text-gray-900">Address & Tax Information</h2>
           </div>
-          <div className="card-content">
+          <div className="p-6">
             {profile ? (
               <div className="space-y-4">
                 <div>
@@ -217,12 +200,8 @@ const Profile = () => {
                   <p className="text-gray-900">{profile.pinCode || 'Not specified'}</p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-600">Service Tax No</label>
-                  <p className="text-gray-900">{profile.serviceTaxNo || 'Not specified'}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-600">Default Currency</label>
-                  <p className="text-gray-900">{profile.defaultCurrency}</p>
+                  <label className="text-sm font-medium text-gray-600">GSTIN</label>
+                  <p className="text-gray-900">{profile.gstin || 'Not specified'}</p>
                 </div>
               </div>
             ) : (
@@ -235,244 +214,245 @@ const Profile = () => {
         </div>
       </div>
 
-      {/* Modal */}
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal-container" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">
-                {profile ? 'Edit Profile' : 'Create Profile'}
-              </h3>
-              <button
-                onClick={() => setShowModal(false)}
-                className="modal-close"
-              >
-                ✕
-              </button>
+      {/* Profile Modal */}
+      <ModernModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={profile ? 'Edit Profile' : 'Create Profile'}
+        size="lg"
+      >
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Company Name *
+              </label>
+              <input
+                type="text"
+                name="companyName"
+                value={formData.companyName}
+                onChange={handleInputChange}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
             </div>
-            <div className="modal-content">
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="form-group">
-                  <label className="form-label">Company Logo</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleLogoChange}
-                    className="form-input"
-                  />
-                  {formData.logo && (
-                    <div className="mt-2">
-                      <img 
-                        src={formData.logo} 
-                        alt="Preview" 
-                        className="h-16 w-auto object-contain border rounded"
-                      />
-                    </div>
-                  )}
-                </div>
-                
-                <div className="form-grid-2">
-                  <div className="form-group">
-                    <label className="form-label">Company Name *</label>
-                    <input
-                      type="text"
-                      name="companyName"
-                      value={formData.companyName}
-                      onChange={(e) => setFormData({...formData, companyName: e.target.value})}
-                      className="form-input"
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label flex items-center">
-                      Company Code *
-                      <span className="ml-1 text-xs text-gray-400" title="This code is used in all document numbers (e.g., XX-2526-IV-001)">
-                        ⓘ
-                      </span>
-                    </label>
-                    <input
-                      type="text"
-                      name="companyCode"
-                      value={formData.companyCode || ''}
-                      onChange={(e) => setFormData({...formData, companyCode: e.target.value})}
-                      className="form-input font-mono"
-                      required
-                      maxLength={8}
-                      placeholder="E.g. XX"
-                    />
-                    <div className="text-xs text-gray-500 mt-1">
-                      Used as the prefix in all document numbers. Example: <span className="font-mono">XX-2526-IV-001</span>
-                    </div>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Contact Person</label>
-                    <input
-                      type="text"
-                      name="contactName"
-                      value={formData.contactName}
-                      onChange={(e) => setFormData({...formData, contactName: e.target.value})}
-                      className="form-input"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Email *</label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({...formData, email: e.target.value})}
-                      className="form-input"
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Phone *</label>
-                    <input
-                      type="text"
-                      name="phone"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                      className="form-input"
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Website</label>
-                    <input
-                      type="url"
-                      name="website"
-                      value={formData.website}
-                      onChange={(e) => setFormData({...formData, website: e.target.value})}
-                      className="form-input"
-                      placeholder="https://example.com"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Default Currency</label>
-                    <select
-                      name="defaultCurrency"
-                      value={formData.defaultCurrency}
-                      onChange={(e) => setFormData({...formData, defaultCurrency: e.target.value})}
-                      className="form-input"
-                    >
-                      <option value="INR">INR</option>
-                      <option value="USD">USD</option>
-                      <option value="EUR">EUR</option>
-                      <option value="GBP">GBP</option>
-                      <option value="CAD">CAD</option>
-                      <option value="AUD">AUD</option>
-                    </select>
-                  </div>
-                </div>
-                
-                <div className="form-group form-full-width">
-                  <label className="form-label">Address *</label>
-                  <textarea
-                    name="address"
-                    value={formData.address}
-                    onChange={(e) => setFormData({...formData, address: e.target.value})}
-                    className="form-input"
-                    rows="3"
-                    required
-                  />
-                </div>
-                
-                <div className="form-grid-2">
-                  <div className="form-group">
-                    <label className="form-label">City *</label>
-                    <input
-                      type="text"
-                      name="city"
-                      value={formData.city}
-                      onChange={(e) => setFormData({...formData, city: e.target.value})}
-                      className="form-input"
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">State</label>
-                    <input
-                      type="text"
-                      name="state"
-                      value={formData.state}
-                      onChange={(e) => setFormData({...formData, state: e.target.value})}
-                      className="form-input"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Country *</label>
-                    <input
-                      type="text"
-                      name="country"
-                      value={formData.country}
-                      onChange={(e) => setFormData({...formData, country: e.target.value})}
-                      className="form-input"
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">PIN Code</label>
-                    <input
-                      type="text"
-                      name="pinCode"
-                      value={formData.pinCode}
-                      onChange={(e) => setFormData({...formData, pinCode: e.target.value})}
-                      className="form-input"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Service Tax No</label>
-                    <input
-                      type="text"
-                      name="serviceTaxNo"
-                      value={formData.serviceTaxNo}
-                      onChange={(e) => setFormData({...formData, serviceTaxNo: e.target.value})}
-                      className="form-input"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Taxation Type</label>
-                    <select
-                      name="taxationType"
-                      value={formData.taxationType}
-                      onChange={(e) => setFormData({...formData, taxationType: e.target.value})}
-                      className="form-input"
-                    >
-                      <option value="">Select Taxation Type</option>
-                      <option value="GST">GST</option>
-                      <option value="VAT">VAT</option>
-                      <option value="Sales Tax">Sales Tax</option>
-                      <option value="None">None</option>
-                    </select>
-                  </div>
-                </div>
-                
-                <div className="flex justify-end space-x-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    className="btn btn-secondary"
-                  >
-                    Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary">
-                    {profile ? 'Update' : 'Create'} Profile
-                  </button>
-                </div>
-              </form>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Company Code
+              </label>
+              <input
+                type="text"
+                name="companyCode"
+                value={formData.companyCode}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Contact Person *
+              </label>
+              <input
+                type="text"
+                name="contactName"
+                value={formData.contactName}
+                onChange={handleInputChange}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email *
+              </label>
+              <input
+                type="email"
+                name="email"
+                value={formData.email}
+                onChange={handleInputChange}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Phone *
+              </label>
+              <input
+                type="tel"
+                name="phone"
+                value={formData.phone}
+                onChange={handleInputChange}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Website
+              </label>
+              <input
+                type="url"
+                name="website"
+                value={formData.website}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Address *
+            </label>
+            <textarea
+              name="address"
+              value={formData.address}
+              onChange={handleInputChange}
+              required
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                City *
+              </label>
+              <input
+                type="text"
+                name="city"
+                value={formData.city}
+                onChange={handleInputChange}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                State
+              </label>
+              <input
+                type="text"
+                name="state"
+                value={formData.state}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Country *
+              </label>
+              <input
+                type="text"
+                name="country"
+                value={formData.country}
+                onChange={handleInputChange}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                PIN Code
+              </label>
+              <input
+                type="text"
+                name="pinCode"
+                value={formData.pinCode}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Taxation Type
+              </label>
+              <select
+                name="taxationType"
+                value={formData.taxationType}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">Select Type</option>
+                <option value="GST">GST</option>
+                <option value="VAT">VAT</option>
+                <option value="None">None</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                GSTIN
+              </label>
+              <input
+                type="text"
+                name="gstin"
+                value={formData.gstin}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-4">
+            <ActionButton
+              type="button"
+              onClick={() => setShowModal(false)}
+              variant="secondary"
+              size="md"
+            >
+              Cancel
+            </ActionButton>
+            <ActionButton
+              type="submit"
+              variant="primary"
+              size="md"
+            >
+              {profile ? 'Update Profile' : 'Create Profile'}
+            </ActionButton>
+          </div>
+        </form>
+      </ModernModal>
+
+      {/* Error Modal */}
+      {errorModal.isOpen && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div className="mt-3 text-center">
+              <div className={`mx-auto flex items-center justify-center h-12 w-12 rounded-full ${
+                errorModal.type === 'success' ? 'bg-green-100' : 'bg-red-100'
+              }`}>
+                {errorModal.type === 'success' ? (
+                  <svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                )}
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mt-4">{errorModal.title}</h3>
+              <div className="mt-2 px-7 py-3">
+                <p className="text-sm text-gray-500">{errorModal.message}</p>
+              </div>
+              <div className="items-center px-4 py-3">
+                <button
+                  onClick={() => setErrorModal({ ...errorModal, isOpen: false })}
+                  className="px-4 py-2 bg-gray-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-300"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
-
-      {/* Error Modal */}
-      <ModernModal
-        isOpen={errorModal.isOpen}
-        onClose={() => setErrorModal({ isOpen: false, title: '', message: '', type: 'error' })}
-        title={errorModal.title}
-        message={errorModal.message}
-        type={errorModal.type}
-      />
     </div>
   );
 };

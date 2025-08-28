@@ -2,35 +2,117 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import ModernModal from '../components/ModernModal';
 import ConfirmModal from '../components/ConfirmModal';
+import Pagination from '../components/Pagination';
+import usePagination from '../hooks/usePagination';
+import DataTable from '../components/DataTable';
+import SearchBar from '../components/SearchBar';
+import PageHeader from '../components/PageHeader';
+import ActionButton from '../components/ActionButton';
+import ResultsSummary from '../components/ResultsSummary';
 import { formatRelatedRecords, getErrorMessage, getErrorType } from '../utils/errorHelpers.jsx';
+import ReadOnlyDocumentNumber from '../components/ReadOnlyDocumentNumber';
 
 const DeliveryChalans = () => {
-  const [chalans, setChalans] = useState([]);
+  const [deliveryChalans, setDeliveryChalans] = useState([]);
   const [clients, setClients] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [editingChalan, setEditingChalan] = useState(null);
+  const [editingDeliveryChalan, setEditingDeliveryChalan] = useState(null);
   const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '', type: 'error' });
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
   const [formData, setFormData] = useState({
     clientId: '',
+    docNo: '',
     invoiceId: '',
     chalanDate: new Date().toISOString().split('T')[0],
-    docNo: '',
-    notes: ''
+    items: []
   });
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [companyCodeMissing, setCompanyCodeMissing] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Filter delivery chalans based on search term
+  const filteredDeliveryChalans = deliveryChalans.filter(chalan =>
+    chalan.docNo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    chalan.client?.companyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    chalan.invoice?.invoiceNo?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Use pagination hook with filtered data
+  const {
+    currentData: paginatedDeliveryChalans,
+    totalItems,
+    totalPages,
+    currentPage,
+    itemsPerPage,
+    handlePageChange,
+    handleItemsPerPageChange,
+    resetToFirstPage
+  } = usePagination(filteredDeliveryChalans, 25);
+
+  // Table columns configuration
+  const columns = [
+    {
+      key: 'docNo',
+      header: 'Chalan No',
+      render: (value, row) => (
+        <div>
+          <div className="text-sm font-medium text-gray-900">{value}</div>
+          {row.invoice?.invoiceNo && <div className="text-xs text-gray-500">Invoice: {row.invoice.invoiceNo}</div>}
+        </div>
+      )
+    },
+    {
+      key: 'client',
+      header: 'Client',
+      render: (value) => (
+        <div className="text-sm text-gray-900">{value?.companyName || '-'}</div>
+      )
+    },
+    {
+      key: 'chalanDate',
+      header: 'Chalan Date',
+      render: (value) => (
+        <div className="text-sm text-gray-900">
+          {value ? new Date(value).toLocaleDateString() : '-'}
+        </div>
+      )
+    },
+    {
+      key: 'invoice',
+      header: 'Invoice',
+      render: (value) => (
+        <div className="text-sm text-gray-900">{value?.invoiceNo || '-'}</div>
+      )
+    },
+    {
+      key: 'items',
+      header: 'Items',
+      render: (value) => (
+        <div className="text-sm text-gray-900">
+          {value && value.length > 0 ? `${value.length} item(s)` : '-'}
+        </div>
+      )
+    }
+  ];
 
   useEffect(() => {
-    fetchChalans();
+    fetchDeliveryChalans();
     fetchClients();
     fetchInvoices();
+    fetchProfile();
   }, []);
 
-  const fetchChalans = async () => {
+  // Reset pagination when search term changes
+  useEffect(() => {
+    resetToFirstPage();
+  }, [searchTerm, resetToFirstPage]);
+
+  const fetchDeliveryChalans = async () => {
     try {
       const response = await axios.get('/delivery-chalans');
-      setChalans(response.data);
+      setDeliveryChalans(response.data);
     } catch (error) {
       console.error('Error fetching chalans:', error);
       showErrorModal('Error', getErrorMessage(error, 'Failed to fetch chalans'), getErrorType(error));
@@ -55,6 +137,22 @@ const DeliveryChalans = () => {
       setInvoices(response.data);
     } catch (error) {
       console.error('Error fetching invoices:', error);
+      showErrorModal('Error', getErrorMessage(error, 'Failed to fetch invoices'), getErrorType(error));
+    }
+  };
+
+  const fetchProfile = async () => {
+    try {
+      const response = await axios.get('/profile');
+      // Assuming the response includes companyCode
+      if (!response.data.companyCode) {
+        setCompanyCodeMissing(true);
+      }
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+      showErrorModal('Error', getErrorMessage(error, 'Failed to fetch profile'), getErrorType(error));
+    } finally {
+      setProfileLoading(false);
     }
   };
 
@@ -62,231 +160,116 @@ const DeliveryChalans = () => {
     setErrorModal({ isOpen: true, title, message, type });
   };
 
-  const showConfirmModal = (title, message, onConfirm) => {
-    setConfirmModal({ isOpen: true, title, message, onConfirm });
-  };
-
   const handleDelete = async (id) => {
-    const chalan = chalans.find(c => c.id === id);
-    const message = `Are you sure you want to delete the delivery chalan "${chalan?.docNo}"? This action cannot be undone.`;
-    
-    showConfirmModal(
-      'Delete Delivery Chalan',
-      message,
-      async () => {
-        try {
-          console.log('Deleting chalan with ID:', id);
-          const response = await axios.delete(`/delivery-chalans/${id}`);
-          console.log('Delete response:', response.data);
-          showErrorModal('Success', 'Delivery chalan deleted successfully!', 'success');
-          fetchChalans();
-        } catch (error) {
-          console.error('Error deleting chalan:', error);
-          console.error('Error response:', error.response?.data);
-          
-          let message = getErrorMessage(error, 'Error deleting chalan');
-          
-          // If there are related records, show them in the modal
-          if (error.response?.data?.relatedRecords) {
-            const relatedRecordsComponent = formatRelatedRecords(error.response.data.relatedRecords);
-            showErrorModal(
-              'Cannot Delete Chalan',
-              message,
-              'warning'
-            );
-            // We'll handle the related records in the modal children
-            setErrorModal(prev => ({
-              ...prev,
-              children: relatedRecordsComponent
-            }));
-          } else {
-            showErrorModal('Error', message, getErrorType(error));
-          }
-        }
+    if (window.confirm('Are you sure you want to delete this delivery chalan?')) {
+      try {
+        await axios.delete(`/delivery-chalans/${id}`);
+        fetchDeliveryChalans();
+        resetToFirstPage();
+      } catch (error) {
+        console.error('Error deleting delivery chalan:', error);
+        showErrorModal('Error', getErrorMessage(error, 'Failed to delete delivery chalan'), getErrorType(error));
       }
-    );
+    }
   };
 
-  const handlePrintDeliveryChalan = async (chalanId) => {
-    try {
-      console.log('Attempting to print Delivery Chalan...', chalanId);
-      const chalanResponse = await axios.get(`/delivery-chalans/${chalanId}`);
-      const chalan = chalanResponse.data;
+  const handlePrint = (deliveryChalan) => {
+    // Create a new window for printing
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Delivery Chalan - ${deliveryChalan.docNo}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; margin-bottom: 30px; }
+            .chalan-details { margin-bottom: 20px; }
+            .client-details { margin-bottom: 20px; }
+            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            .items-table th, .items-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            .items-table th { background-color: #f2f2f2; }
+            .totals { text-align: right; margin-top: 20px; }
+            .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #666; }
+            @media print { body { margin: 0; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>DELIVERY CHALAN</h1>
+            <h2>${deliveryChalan.docNo}</h2>
+          </div>
+          
+          <div class="chalan-details">
+            <p><strong>Invoice Reference:</strong> ${deliveryChalan.invoice?.invoiceNo || 'N/A'}</p>
+            <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+          </div>
+          
+          <div class="client-details">
+            <h3>Deliver To:</h3>
+            <p><strong>${deliveryChalan.invoice?.client?.companyName || 'N/A'}</strong></p>
+            <p>${deliveryChalan.invoice?.client?.address || 'N/A'}</p>
+            <p>${deliveryChalan.invoice?.client?.city || ''}, ${deliveryChalan.invoice?.client?.state || ''} ${deliveryChalan.invoice?.client?.pinCode || ''}</p>
+          </div>
+          
+          <table class="items-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Description</th>
+                <th>Qty</th>
+                <th>Unit</th>
+                <th>Remarks</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${deliveryChalan.items?.map(item => `
+                <tr>
+                  <td>${item.item?.name || 'N/A'}</td>
+                  <td>${item.description || ''}</td>
+                  <td>${item.quantity}</td>
+                  <td>${item.unit || 'N/A'}</td>
+                  <td>${item.remarks || ''}</td>
+                </tr>
+              `).join('') || ''}
+            </tbody>
+          </table>
+          
+          <div class="footer">
+            <p>This is a delivery chalan for goods mentioned above</p>
+            <p>Customer Signature: _________________</p>
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+  };
 
-      const profileResponse = await axios.get('/profiles'); // Fetch company profile
-      const companyProfile = profileResponse.data.length > 0 ? profileResponse.data[0] : {};
-
-      if (!chalan) {
-        showErrorModal('Error', 'Delivery Chalan not found for printing', 'error');
-        return;
-      }
-
-      // Assuming items are part of the chalan or can be fetched based on invoiceId if available
-      // For now, if chalan doesn't have an items array directly, we'll use an empty one.
-      // If items need to be fetched via invoiceId, that logic would go here.
-      const chalanItems = chalan.invoice?.items || []; // Link to invoice items if associated
-
-      const printWindow = window.open('', '_blank');
-      if (!printWindow) {
-        showErrorModal('Error', 'Please allow pop-ups for printing', 'error');
-        return;
-      }
-
-      // Format currency helper (assuming it's available globally or imported/defined elsewhere)
-      const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-IN', {
-          style: 'currency',
-          currency: 'INR'
-        }).format(amount || 0);
-      };
-
-      const deliveryChalanHtml = `
-        <html>
-          <head>
-            <title>Delivery Chalan #${chalan.docNo}</title>
-            <style>
-              body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; }
-              .chalan-page { width: 210mm; min-height: 297mm; margin: 10mm auto; border: 1px solid #eee; background: #fff; padding: 20mm; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
-              .header-section { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
-              .company-info h1 { margin: 0; font-size: 28px; color: #333; }
-              .company-info p { margin: 2px 0; font-size: 14px; color: #555; }
-              .chalan-title { font-size: 40px; font-weight: bold; color: #333; margin-top: 0; }
-              .chalan-meta { margin-top: 10px; text-align: right; font-size: 14px; }
-              .chalan-meta div { margin-bottom: 5px; }
-
-              .address-section { display: flex; justify-content: space-between; margin-bottom: 30px; }
-              .address-box { border: 1px solid #eee; padding: 15px; width: 48%; }
-              .address-box h3 { margin-top: 0; font-size: 16px; color: #333; }
-              .address-box p { margin: 2px 0; font-size: 14px; color: #555; }
-
-              .item-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-              .item-table th, .item-table td { border: 1px solid #eee; padding: 10px; text-align: left; font-size: 14px; }
-              .item-table th { background-color: #f9f9f9; font-weight: bold; color: #333; }
-
-              .notes-section { font-size: 13px; color: #555; margin-bottom: 30px; }
-              .footer-section { text-align: center; font-size: 12px; color: #777; border-top: 1px solid #eee; padding-top: 15px; }
-              @media print {
-                .chalan-page { box-shadow: none; border: none; }
-              }
-            </style>
-          </head>
-          <body>
-            <div class="chalan-page">
-              <div class="header-section">
-                <div class="company-info">
-                  ${companyProfile.logo ? `<img src="${companyProfile.logo}" alt="Company Logo" style="height: 60px; margin-bottom: 10px;"/>` : ''}
-                  <h1>${companyProfile.companyName || 'Your Company Name'}</h1>
-                  <p>${companyProfile.address || 'Your Company Address'}</p>
-                  <p>${companyProfile.city || 'City'}, ${companyProfile.state || 'State'} ${companyProfile.pinCode || 'PIN'}</p>
-                  <p>Email: ${companyProfile.email || 'N/A'} | Phone: ${companyProfile.phone || 'N/A'}</p>
-                  ${companyProfile.website ? `<p>Website: ${companyProfile.website}</p>` : ''}
-                  ${companyProfile.serviceTaxNo ? `<p>Service Tax No: ${companyProfile.serviceTaxNo}</p>` : ''}
-                </div>
-                <div>
-                  <h2 class="chalan-title">DELIVERY CHALAN</h2>
-                  <div class="chalan-meta">
-                    <div><strong>Chalan No:</strong> ${chalan.docNo}</div>
-                    <div><strong>Chalan Date:</strong> ${new Date(chalan.chalanDate).toLocaleDateString()}</div>
-                    ${chalan.invoice ? `<div><strong>Invoice No:</strong> ${chalan.invoice.invoiceNo}</div>` : ''}
-                  </div>
-                </div>
-              </div>
-
-              <div class="address-section">
-                <div class="address-box">
-                  <h3>Deliver To:</h3>
-                  <p><strong>${chalan.client?.companyName || 'Client Name'}</strong></p>
-                  <p>${chalan.client?.shippingAddress || 'Client Address'}</p>
-                  <p>${chalan.client?.city || 'City'}, ${chalan.client?.state || 'State'} ${chalan.client?.pinCode || 'PIN'}</p>
-                  <p>Email: ${chalan.client?.email || 'N/A'}</p>
-                  <p>Phone: ${chalan.client?.phone || 'N/A'}</p>
-                </div>
-                <div class="address-box">
-                  <h3>Bill To:</h3>
-                  <p><strong>${chalan.client?.companyName || 'Client Name'}</strong></p>
-                  <p>${chalan.client?.billingAddress || 'Client Address'}</p>
-                  <p>${chalan.client?.city || 'City'}, ${chalan.client?.state || 'State'} ${chalan.client?.pinCode || 'PIN'}</p>
-                </div>
-              </div>
-
-              <table class="item-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Item & Description</th>
-                    <th>Qty</th>
-                    <th>Unit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${(chalanItems || []).map((item, index) => `
-                    <tr>
-                      <td>${index + 1}</td>
-                      <td>
-                        <strong>${item.name || 'N/A'}</strong><br/>
-                        <span style="font-size: 12px; color: #777;">${item.description || ''}</span>
-                      </td>
-                      <td>${item.quantity}</td>
-                      <td>${item.unit}</td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-
-              ${chalan.notes ? `<div class="notes-section">
-                <strong>Notes:</strong>
-                <p>${chalan.notes}</p>
-              </div>` : ''}
-
-              <div class="footer-section">
-                <p>${companyProfile.companyName || 'Your Company Name'} | ${companyProfile.address || 'Your Company Address'}</p>
-                <p>Email: ${companyProfile.email || 'N/A'} | Phone: ${companyProfile.phone || 'N/A'} | Website: ${companyProfile.website || 'N/A'}</p>
-                ${companyProfile.bankDetails && companyProfile.bankDetails.length > 0 ? `
-                  <p>Bank: ${companyProfile.bankDetails[0].bankName} | A/C No: ${companyProfile.bankDetails[0].accountNumber} | IFSC: ${companyProfile.bankDetails[0].ifscCode}</p>
-                ` : ''}
-                <p>Thank you for your business!</p>
-              </div>
-            </div>
-          </body>
-        </html>
-      `;
-
-      printWindow.document.write(deliveryChalanHtml);
-      printWindow.document.close();
-      printWindow.focus();
-      printWindow.print();
-
-    } catch (error) {
-      console.error('Error printing Delivery Chalan:', error);
-      showErrorModal('Error', getErrorMessage(error, 'Failed to print Delivery Chalan'), getErrorType(error));
-    }
+  const handleEdit = (row) => {
+    console.log('Editing chalan:', row);
+    setEditingDeliveryChalan(row);
+    setFormData({
+      clientId: row.clientId,
+      docNo: row.docNo,
+      invoiceId: row.invoiceId,
+      chalanDate: row.chalanDate,
+      items: row.items
+    });
+    setShowModal(true);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     console.log('Submitting chalan data:', formData);
-    
-    // Prepare the data with proper types
-    const chalanData = {
-      ...formData,
-      clientId: parseInt(formData.clientId),
-      invoiceId: formData.invoiceId ? parseInt(formData.invoiceId) : null
-    };
-    
     try {
-      if (editingChalan) {
-        const response = await axios.put(`/delivery-chalans/${editingChalan.id}`, chalanData);
-        console.log('Update response:', response.data);
-        showErrorModal('Success', 'Delivery chalan updated successfully!', 'success');
-      } else {
-        const response = await axios.post('/delivery-chalans', chalanData);
-        console.log('Create response:', response.data);
-        showErrorModal('Success', 'Delivery chalan created successfully!', 'success');
-      }
+      const response = await axios.post('/delivery-chalans', formData);
+      console.log('Create response:', response.data);
+      showErrorModal('Success', 'Delivery chalan created successfully!', 'success');
       setShowModal(false);
-      setEditingChalan(null);
       resetForm();
-      fetchChalans();
+      fetchDeliveryChalans();
+      resetToFirstPage(); // Reset pagination after data change
     } catch (error) {
       console.error('Error saving chalan:', error);
       console.error('Error response:', error.response?.data);
@@ -294,25 +277,13 @@ const DeliveryChalans = () => {
     }
   };
 
-  const handleEdit = (chalan) => {
-    setEditingChalan(chalan);
-    setFormData({
-      clientId: chalan.clientId.toString(),
-      invoiceId: chalan.invoiceId?.toString() || '',
-      chalanDate: new Date(chalan.chalanDate).toISOString().split('T')[0],
-      docNo: chalan.docNo,
-      notes: chalan.notes || ''
-    });
-    setShowModal(true);
-  };
-
   const resetForm = () => {
     setFormData({
       clientId: '',
+      docNo: '',
       invoiceId: '',
       chalanDate: new Date().toISOString().split('T')[0],
-      docNo: '',
-      notes: ''
+      items: []
     });
   };
 
@@ -333,106 +304,70 @@ const DeliveryChalans = () => {
 
   return (
     <div className="p-8">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Delivery Chalans</h1>
-          <p className="text-gray-600">Manage your delivery chalans</p>
-        </div>
-        <button 
-          onClick={() => {
-            console.log('Opening modal for new chalan');
-            setShowModal(true);
-          }}
-          className="btn btn-primary"
-        >
-          <span className="mr-2">➕</span>
-          Create Chalan
-        </button>
-      </div>
+      {/* Header */}
+      <PageHeader
+        title="Delivery Chalans"
+        subtitle="Manage your delivery challans"
+        actionButton={
+          <ActionButton
+            onClick={() => setShowModal(true)}
+            variant="primary"
+            size="lg"
+            icon={
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+            }
+          >
+            Create Chalan
+          </ActionButton>
+        }
+      />
 
-      <div className="card">
-        <div className="card-content">
-          {chalans.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Chalan #</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Client</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Date</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Invoice</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Notes</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {chalans.map((chalan) => (
-                    <tr key={chalan.id} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4 font-medium">{chalan.docNo}</td>
-                      <td className="py-3 px-4">{chalan.client?.companyName || 'N/A'}</td>
-                      <td className="py-3 px-4 text-sm">
-                        {new Date(chalan.chalanDate).toLocaleDateString()}
-                      </td>
-                      <td className="py-3 px-4 text-sm">
-                        {chalan.invoice?.invoiceNo || 'N/A'}
-                      </td>
-                      <td className="py-3 px-4 text-sm">
-                        {chalan.notes || '-'}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="flex space-x-2">
-                          <button 
-                            onClick={() => handleEdit(chalan)}
-                            className="text-blue-600 hover:text-blue-800"
-                          >
-                            ✏️
-                          </button>
-                          <button 
-                            className="text-green-600 hover:text-green-800 p-2 rounded hover:bg-green-50 transition-colors"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              handlePrintDeliveryChalan(chalan.id);
-                            }}
-                            type="button"
-                            title="Print Delivery Chalan"
-                            aria-label="Print Delivery Chalan"
-                          >
-                            📄
-                          </button>
-                          <button
-                            onClick={() => {
-                              console.log('Delete button clicked for chalan ID:', chalan.id);
-                              handleDelete(chalan.id);
-                            }}
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <span className="text-4xl mb-4 block"></span>
-              <p>No delivery chalans found</p>
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Search */}
+      <SearchBar
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        placeholder="Search by chalan number, client, or invoice..."
+        label="Search Delivery Chalans"
+      />
+
+      {/* Results Summary */}
+      <ResultsSummary
+        totalItems={totalItems}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        searchTerm={searchTerm}
+        itemName="delivery chalan"
+      />
+
+      {/* Delivery Chalans Table */}
+      <DataTable
+        columns={columns}
+        data={paginatedDeliveryChalans}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        onPrint={handlePrint}
+        emptyMessage="No delivery chalans found"
+        emptyIcon="🚚"
+      />
+
+      {/* Pagination */}
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={handlePageChange}
+        totalItems={totalItems}
+        itemsPerPage={itemsPerPage}
+        onItemsPerPageChange={handleItemsPerPageChange}
+      />
 
       {/* Modal */}
       {showModal && (
         <div className="modal-overlay" onClick={() => console.log('Modal overlay clicked')}>
           <div className="modal-container" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">
-                {editingChalan ? 'Edit' : 'Create New'} Delivery Chalan
-              </h3>
+              <h3 className="modal-title">Create New Chalan</h3>
               <button
                 onClick={() => {
                   console.log('Closing modal');
@@ -465,22 +400,6 @@ const DeliveryChalans = () => {
                     </select>
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Invoice (Optional)</label>
-                    <select
-                      name="invoiceId"
-                      value={formData.invoiceId}
-                      onChange={(e) => setFormData({...formData, invoiceId: e.target.value})}
-                      className="form-input"
-                    >
-                      <option value="">Select Invoice</option>
-                      {invoices.map((invoice) => (
-                        <option key={invoice.id} value={invoice.id}>
-                          {invoice.invoiceNo} - {invoice.client?.companyName}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-group">
                     <label className="form-label">Chalan Date *</label>
                     <input
                       type="date"
@@ -492,44 +411,126 @@ const DeliveryChalans = () => {
                     />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Document Number *</label>
+                    <label className="form-label">Chalan No *</label>
                     <input
                       type="text"
                       name="docNo"
                       value={formData.docNo}
                       onChange={(e) => setFormData({...formData, docNo: e.target.value})}
                       className="form-input"
-                      placeholder="DC-001"
                       required
+                      placeholder="Chalan number"
                     />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Invoice *</label>
+                    <select
+                      name="invoiceId"
+                      value={formData.invoiceId}
+                      onChange={(e) => setFormData({...formData, invoiceId: e.target.value})}
+                      className="form-input"
+                      required
+                    >
+                      <option value="">Select Invoice</option>
+                      {invoices.map((invoice) => (
+                        <option key={invoice.id} value={invoice.id}>
+                          {invoice.invoiceNo}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
                 <div className="form-group form-full-width">
-                  <label className="form-label">Notes</label>
-                  <textarea
-                    name="notes"
-                    value={formData.notes}
-                    onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                    className="form-input"
-                    rows="4"
-                    placeholder="Enter chalan notes..."
-                  />
-                </div>
-                <div className="flex justify-end space-x-3 pt-4">
+                  <label className="form-label">Items</label>
+                  <div className="space-y-3">
+                    {formData.items.map((item, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                        <div className="flex-1 mr-4">
+                          <input
+                            type="text"
+                            name={`itemName-${index}`}
+                            value={item.name}
+                            onChange={(e) => {
+                              const newItems = [...formData.items];
+                              newItems[index] = { ...newItems[index], name: e.target.value };
+                              setFormData({ ...formData, items: newItems });
+                            }}
+                            className="form-input"
+                            placeholder="Item name"
+                          />
+                        </div>
+                        <div className="flex-1 mr-4">
+                          <input
+                            type="number"
+                            name={`itemQuantity-${index}`}
+                            value={item.quantity}
+                            onChange={(e) => {
+                              const newItems = [...formData.items];
+                              newItems[index] = { ...newItems[index], quantity: e.target.value };
+                              setFormData({ ...formData, items: newItems });
+                            }}
+                            className="form-input"
+                            placeholder="Quantity"
+                          />
+                        </div>
+                        <div className="flex-1 mr-4">
+                          <input
+                            type="number"
+                            name={`itemPrice-${index}`}
+                            value={item.price}
+                            onChange={(e) => {
+                              const newItems = [...formData.items];
+                              newItems[index] = { ...newItems[index], price: e.target.value };
+                              setFormData({ ...formData, items: newItems });
+                            }}
+                            className="form-input"
+                            placeholder="Price"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newItems = formData.items.filter((_, i) => i !== index);
+                            setFormData({ ...formData, items: newItems });
+                          }}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                   <button
                     type="button"
                     onClick={() => {
+                      setFormData(prev => ({
+                        ...prev,
+                        items: [...prev.items, { name: '', quantity: 1, price: 0 }]
+                      }));
+                    }}
+                    className="text-blue-600 hover:text-blue-800 mt-4"
+                  >
+                    Add Item
+                  </button>
+                </div>
+                <div className="flex justify-end space-x-3 pt-4">
+                  <ActionButton
+                    onClick={() => {
                       setShowModal(false);
-                      setEditingChalan(null);
                       resetForm();
                     }}
-                    className="btn btn-secondary"
+                    variant="secondary"
+                    size="md"
                   >
                     Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary">
-                    {editingChalan ? 'Update' : 'Create'} Delivery Chalan
-                  </button>
+                  </ActionButton>
+                  <ActionButton
+                    type="submit"
+                    variant="primary"
+                    size="md"
+                  >
+                    {editingDeliveryChalan ? 'Update Delivery Chalan' : 'Create Delivery Chalan'}
+                  </ActionButton>
                 </div>
               </form>
             </div>
@@ -547,15 +548,6 @@ const DeliveryChalans = () => {
       >
         {errorModal.children}
       </ModernModal>
-
-      {/* Confirm Modal */}
-      <ConfirmModal
-        isOpen={confirmModal.isOpen}
-        onClose={() => setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null })}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        onConfirm={confirmModal.onConfirm}
-      />
     </div>
   );
 };

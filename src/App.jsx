@@ -15,7 +15,7 @@ import ProformaInvoices from './pages/ProformaInvoices';
 import DeliveryChalans from './pages/DeliveryChalans';
 import CreditNotes from './pages/CreditNotes';
 import DebitNotes from './pages/DebitNotes';
-import RecordPayment from './pages/RecordPayment';
+import Payments from './pages/Payments';
 import Profile from './pages/Profile';
 import './index.css';
 
@@ -116,7 +116,7 @@ const AuthCheck = () => {
         <Route path="/delivery-chalans" element={<DeliveryChalans />} />
         <Route path="/credit-notes" element={<CreditNotes />} />
         <Route path="/debit-notes" element={<DebitNotes />} />
-        <Route path="/payments" element={<RecordPayment />} />
+        <Route path="/payments" element={<Payments />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="*" element={<Navigate to="/dashboard" />} />
       </Routes>

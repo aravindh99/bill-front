@@ -2,6 +2,13 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import ModernModal from '../components/ModernModal';
 import ConfirmModal from '../components/ConfirmModal';
+import Pagination from '../components/Pagination';
+import usePagination from '../hooks/usePagination';
+import DataTable from '../components/DataTable';
+import SearchBar from '../components/SearchBar';
+import PageHeader from '../components/PageHeader';
+import ActionButton from '../components/ActionButton';
+import ResultsSummary from '../components/ResultsSummary';
 import { formatRelatedRecords, getErrorMessage, getErrorType } from '../utils/errorHelpers.jsx';
 import ReadOnlyDocumentNumber from '../components/ReadOnlyDocumentNumber';
 
@@ -51,12 +58,109 @@ const Invoices = () => {
     notes: ''
   });
 
+  // Filter invoices based on search term
+  const filteredInvoices = invoices.filter(invoice =>
+    invoice.invoiceNo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    invoice.client?.companyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    invoice.poNo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    invoice.amount?.toString().includes(searchTerm)
+  );
+
+  // Use pagination hook with filtered data
+  const {
+    currentData: paginatedInvoices,
+    totalItems,
+    totalPages,
+    currentPage,
+    itemsPerPage,
+    handlePageChange,
+    handleItemsPerPageChange,
+    resetToFirstPage
+  } = usePagination(filteredInvoices, 25);
+
+  // Table columns configuration
+  const columns = [
+    {
+      key: 'invoiceNo',
+      header: 'Invoice No',
+      render: (value, row) => (
+        <div>
+          <div className="text-sm font-medium text-gray-900">{value}</div>
+          {row.poNo && <div className="text-xs text-gray-500">PO: {row.poNo}</div>}
+        </div>
+      )
+    },
+    {
+      key: 'client',
+      header: 'Client',
+      render: (value) => (
+        <div className="text-sm text-gray-900">{value?.companyName || '-'}</div>
+      )
+    },
+    {
+      key: 'invoiceDate',
+      header: 'Date',
+      render: (value) => (
+        <div className="text-sm text-gray-900">
+          {value ? new Date(value).toLocaleDateString() : '-'}
+        </div>
+      )
+    },
+    {
+      key: 'dueDate',
+      header: 'Due Date',
+      render: (value) => (
+        <div className="text-sm text-gray-900">
+          {value ? new Date(value).toLocaleDateString() : '-'}
+        </div>
+      )
+    },
+    {
+      key: 'amount',
+      header: 'Amount',
+      render: (value) => (
+        <div className="text-sm font-medium text-gray-900">
+          ₹{parseFloat(value || 0).toFixed(2)}
+        </div>
+      )
+    },
+    {
+      key: 'balance',
+      header: 'Balance',
+      render: (value) => (
+        <div className={`text-sm font-medium ${parseFloat(value || 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+          ₹{parseFloat(value || 0).toFixed(2)}
+        </div>
+      )
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (value, row) => {
+        const balance = parseFloat(row.balance || 0);
+        const status = balance > 0 ? 'Pending' : 'Paid';
+        const colorClass = balance > 0 ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800';
+        
+        return (
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${colorClass}`}>
+            {status}
+          </span>
+        );
+      }
+    }
+  ];
+
   useEffect(() => {
     fetchInvoices();
     fetchClients();
     fetchItems();
     fetchProfile();
   }, []);
+
+  // Reset pagination when search term changes
+  useEffect(() => {
+    resetToFirstPage();
+  }, [searchTerm, resetToFirstPage]);
 
   useEffect(() => {
     if (formData.clientId) {
@@ -229,6 +333,7 @@ const Invoices = () => {
       setEditingInvoice(null);
       resetForm();
       fetchInvoices();
+      resetToFirstPage(); // Reset pagination after data change
     } catch (error) {
       showErrorModal('Error', getErrorMessage(error, 'Failed to save invoice'), getErrorType(error));
     }
@@ -288,6 +393,7 @@ const Invoices = () => {
           console.log('Delete response:', response.data);
           showErrorModal('Success', 'Invoice deleted successfully!', 'success');
           fetchInvoices();
+          resetToFirstPage(); // Reset pagination after deletion
         } catch (error) {
           console.error('Error deleting invoice:', error);
           console.error('Error response:', error.response?.data);
@@ -313,6 +419,85 @@ const Invoices = () => {
         }
       }
     );
+  };
+
+  const handlePrint = (invoice) => {
+    // Create a new window for printing
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Invoice - ${invoice.invoiceNo}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; margin-bottom: 30px; }
+            .invoice-details { margin-bottom: 20px; }
+            .client-details { margin-bottom: 20px; }
+            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            .items-table th, .items-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            .items-table th { background-color: #f2f2f2; }
+            .totals { text-align: right; margin-top: 20px; }
+            .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #666; }
+            @media print { body { margin: 0; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>INVOICE</h1>
+            <h2>${invoice.invoiceNo}</h2>
+          </div>
+          
+          <div class="invoice-details">
+            <p><strong>Invoice Date:</strong> ${new Date(invoice.invoiceDate).toLocaleDateString()}</p>
+            <p><strong>Due Date:</strong> ${new Date(invoice.dueDate).toLocaleDateString()}</p>
+          </div>
+          
+          <div class="client-details">
+            <h3>Bill To:</h3>
+            <p><strong>${invoice.client?.companyName || 'N/A'}</strong></p>
+            <p>${invoice.client?.address || 'N/A'}</p>
+            <p>${invoice.client?.city || ''}, ${invoice.client?.state || ''} ${invoice.client?.pinCode || ''}</p>
+          </div>
+          
+          <table class="items-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Description</th>
+                <th>Qty</th>
+                <th>Unit Price</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${invoice.items?.map(item => `
+                <tr>
+                  <td>${item.item?.name || 'N/A'}</td>
+                  <td>${item.description || ''}</td>
+                  <td>${item.quantity}</td>
+                  <td>₹${item.price}</td>
+                  <td>₹${item.total}</td>
+                </tr>
+              `).join('') || ''}
+            </tbody>
+          </table>
+          
+          <div class="totals">
+            <p><strong>Subtotal:</strong> ₹${invoice.subtotal || 0}</p>
+            <p><strong>Tax:</strong> ₹${invoice.tax || 0}</p>
+            <p><strong>Total Amount:</strong> ₹${invoice.amount || 0}</p>
+            <p><strong>Balance Due:</strong> ₹${invoice.balance || 0}</p>
+          </div>
+          
+          <div class="footer">
+            <p>Thank you for your business!</p>
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
   };
 
   const resetForm = () => {
@@ -350,12 +535,6 @@ const Invoices = () => {
     return 'bg-red-100 text-red-800';
   };
 
-  const filteredInvoices = invoices.filter(invoice =>
-    invoice.invoiceNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    invoice.client?.companyName?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  // Add item to invoice
   const addItem = () => {
     setFormData({
       ...formData,
@@ -371,7 +550,6 @@ const Invoices = () => {
     });
   };
 
-  // Remove item from invoice
   const removeItem = (index) => {
     const newItems = formData.items.filter((_, i) => i !== index);
     setFormData({
@@ -382,7 +560,6 @@ const Invoices = () => {
     calculateTotals(newItems);
   };
 
-  // Update item in invoice
   const updateItem = (index, field, value) => {
     const newItems = [...formData.items];
     newItems[index][field] = value;
@@ -421,7 +598,6 @@ const Invoices = () => {
     calculateTotals(newItems);
   };
 
-  // Calculate invoice totals
   const calculateTotals = (items) => {
     const subtotal = items.reduce((sum, item) => sum + parseFloat(item.total || 0), 0);
     const taxAmount = parseFloat(formData.tax || 0);
@@ -436,7 +612,6 @@ const Invoices = () => {
     }));
   };
 
-  // Update tax and recalculate totals
   const updateTax = (value) => {
     const subtotal = parseFloat(formData.subtotal || 0);
     const taxAmount = parseFloat(value || 0);
@@ -451,7 +626,6 @@ const Invoices = () => {
     });
   };
 
-  // Update shipping charges and recalculate totals
   const updateShippingCharges = (value) => {
     const subtotal = parseFloat(formData.subtotal || 0);
     const taxAmount = parseFloat(formData.tax || 0);
@@ -496,7 +670,6 @@ const Invoices = () => {
     }
   };
 
-  // New function for printing invoice
   const handlePrintInvoice = async (invoiceId) => {
     try {
       const invoiceResponse = await axios.get(`/invoices/${invoiceId}`);
@@ -682,106 +855,62 @@ const Invoices = () => {
   return (
     <div className="p-8">
       {/* Header */}
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>
-          <p className="text-gray-600">Manage your invoices and billing</p>
-        </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-          <span className="mr-2">➕</span>
-          Create Invoice
-        </button>
-      </div>
+      <PageHeader
+        title="Invoices"
+        subtitle="Manage your invoices and billing"
+        actionButton={
+          <ActionButton
+            onClick={() => setShowModal(true)}
+            variant="primary"
+            size="lg"
+            icon={
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+            }
+          >
+            Create Invoice
+          </ActionButton>
+        }
+      />
 
       {/* Search */}
-      <div className="mb-6">
-        <input
-          type="text"
-          placeholder="Search invoices..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="form-input w-full md:w-1/3"
-        />
-      </div>
+      <SearchBar
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        placeholder="Search by invoice number, client, PO number, or amount..."
+        label="Search Invoices"
+      />
+
+      {/* Results Summary */}
+      <ResultsSummary
+        totalItems={totalItems}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        searchTerm={searchTerm}
+        itemName="invoice"
+      />
 
       {/* Invoices Table */}
-      <div className="card">
-        <div className="card-content">
-          {filteredInvoices.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Invoice #</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Client</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Date</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Due Date</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Amount</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Balance</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Status</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredInvoices.map((invoice) => (
-                    <tr key={invoice.id} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4 font-medium">{invoice.invoiceNo}</td>
-                      <td className="py-3 px-4">{invoice.client?.companyName || 'N/A'}</td>
-                      <td className="py-3 px-4 text-sm">
-                        {new Date(invoice.invoiceDate).toLocaleDateString()}
-                      </td>
-                      <td className="py-3 px-4 text-sm">
-                        {new Date(invoice.dueDate).toLocaleDateString()}
-                      </td>
-                      <td className="py-3 px-4 font-medium">
-                        {formatCurrency(invoice.amount)}
-                      </td>
-                      <td className="py-3 px-4 font-medium">
-                        {formatCurrency(invoice.balance)}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(invoice.balance)}`}>
-                          {invoice.balance === 0 ? 'Paid' : invoice.balance > 0 ? 'Pending' : 'Overdue'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="flex space-x-2">
-                          <button 
-                            className="text-blue-600 hover:text-blue-800"
-                            onClick={() => handleEdit(invoice)}
-                          >
-                            ✏️
-                          </button>
-                          <button 
-                            className="text-green-600 hover:text-green-800"
-                            onClick={() => handlePrintInvoice(invoice.id)}
-                          >
-                            📄
-                          </button>
-                          <button
-                            onClick={() => {
-                              console.log('Delete button clicked for invoice ID:', invoice.id);
-                              handleDelete(invoice.id);
-                            }}
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <span className="text-4xl mb-4 block">📄</span>
-              <p>No invoices found</p>
-            </div>
-          )}
-        </div>
-      </div>
+      <DataTable
+        columns={columns}
+        data={paginatedInvoices}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        onPrint={handlePrint}
+        emptyMessage="No invoices found"
+        emptyIcon="📄"
+      />
+
+      {/* Pagination */}
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={handlePageChange}
+        totalItems={totalItems}
+        itemsPerPage={itemsPerPage}
+        onItemsPerPageChange={handleItemsPerPageChange}
+      />
 
       {/* Modal */}
       {showModal && (
@@ -946,13 +1075,14 @@ const Invoices = () => {
                 <div className="border-t pt-4">
                   <div className="flex justify-between items-center mb-4">
                     <h4 className="text-lg font-semibold">Invoice Items</h4>
-                    <button
+                    <ActionButton
                       type="button"
                       onClick={addItem}
-                      className="btn btn-primary btn-sm"
+                      variant="primary"
+                      size="sm"
                     >
                       Add Item
-                    </button>
+                    </ActionButton>
                   </div>
                   {formData.items.length > 0 ? (
                     <div className="overflow-x-auto">
@@ -1170,31 +1300,38 @@ const Invoices = () => {
                     ) : (
                       <p className="text-gray-500 text-sm">No payments recorded for this invoice.</p>
                     )}
-                    <button
+                    <ActionButton
                       type="button"
                       onClick={handleOpenPaymentModal}
-                      className="btn btn-secondary mt-4"
+                      variant="secondary"
+                      size="md"
+                      className="mt-4"
                     >
                       Record Payment
-                    </button>
+                    </ActionButton>
                   </div>
                 )}
 
                 <div className="flex justify-end space-x-3 pt-4">
-                  <button
-                    type="button"
+                  <ActionButton
                     onClick={() => {
                       setShowModal(false);
                       setEditingInvoice(null);
                       resetForm();
                     }}
-                    className="btn btn-secondary"
+                    variant="secondary"
+                    size="md"
                   >
                     Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary" disabled={companyCodeMissing || profileLoading}>
-                    {editingInvoice ? 'Update' : 'Create'} Invoice
-                  </button>
+                  </ActionButton>
+                  <ActionButton
+                    type="submit"
+                    variant="primary"
+                    size="md"
+                    disabled={companyCodeMissing || profileLoading}
+                  >
+                    {editingInvoice ? 'Update Invoice' : 'Create Invoice'}
+                  </ActionButton>
                 </div>
                 {companyCodeMissing && !profileLoading && (
                   <div className="text-red-600 text-sm mt-2">
@@ -1309,16 +1446,20 @@ const Invoices = () => {
               />
             </div>
             <div className="flex justify-end space-x-3 pt-4">
-              <button
-                type="button"
+              <ActionButton
                 onClick={() => setShowPaymentModal(false)}
-                className="btn btn-secondary"
+                variant="secondary"
+                size="md"
               >
                 Cancel
-              </button>
-              <button type="submit" className="btn btn-primary">
+              </ActionButton>
+              <ActionButton
+                type="submit"
+                variant="primary"
+                size="md"
+              >
                 Record Payment
-              </button>
+              </ActionButton>
             </div>
           </form>
         </ModernModal>

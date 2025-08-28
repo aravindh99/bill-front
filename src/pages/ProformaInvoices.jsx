@@ -2,6 +2,13 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import ModernModal from '../components/ModernModal';
 import ConfirmModal from '../components/ConfirmModal';
+import Pagination from '../components/Pagination';
+import usePagination from '../hooks/usePagination';
+import DataTable from '../components/DataTable';
+import SearchBar from '../components/SearchBar';
+import PageHeader from '../components/PageHeader';
+import ActionButton from '../components/ActionButton';
+import ResultsSummary from '../components/ResultsSummary';
 import { formatRelatedRecords, getErrorMessage, getErrorType } from '../utils/errorHelpers.jsx';
 import ReadOnlyDocumentNumber from '../components/ReadOnlyDocumentNumber';
 
@@ -17,16 +24,101 @@ const ProformaInvoices = () => {
   const [quotations, setQuotations] = useState([]);
   const [formData, setFormData] = useState({
     clientId: '',
-    proformaNo: '',
-    poNumber: '',
-    proformaDate: new Date().toISOString().split('T')[0],
+    proformaInvoiceNo: '',
+    quotationId: '',
+    proformaInvoiceDate: new Date().toISOString().split('T')[0],
     validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    items: [],
-    quotationId: ''
+    subtotal: '0.00',
+    total: '0.00',
+    items: []
   });
-  const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [companyCodeMissing, setCompanyCodeMissing] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Filter proforma invoices based on search term
+  const filteredProformaInvoices = proformaInvoices.filter(proforma =>
+    proforma.proformaInvoiceNo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    proforma.client?.companyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    proforma.total?.toString().includes(searchTerm)
+  );
+
+  // Use pagination hook with filtered data
+  const {
+    currentData: paginatedProformaInvoices,
+    totalItems,
+    totalPages,
+    currentPage,
+    itemsPerPage,
+    handlePageChange,
+    handleItemsPerPageChange,
+    resetToFirstPage
+  } = usePagination(filteredProformaInvoices, 25);
+
+  // Table columns configuration
+  const columns = [
+    {
+      key: 'proformaInvoiceNo',
+      header: 'Proforma No',
+      render: (value, row) => (
+        <div>
+          <div className="text-sm font-medium text-gray-900">{value}</div>
+          {row.quotation?.quotationNo && <div className="text-xs text-gray-500">Quote: {row.quotation.quotationNo}</div>}
+        </div>
+      )
+    },
+    {
+      key: 'client',
+      header: 'Client',
+      render: (value) => (
+        <div className="text-sm text-gray-900">{value?.companyName || '-'}</div>
+      )
+    },
+    {
+      key: 'proformaInvoiceDate',
+      header: 'Date',
+      render: (value) => (
+        <div className="text-sm text-gray-900">
+          {value ? new Date(value).toLocaleDateString() : '-'}
+        </div>
+      )
+    },
+    {
+      key: 'validUntil',
+      header: 'Valid Until',
+      render: (value) => (
+        <div className="text-sm text-gray-900">
+          {value ? new Date(value).toLocaleDateString() : '-'}
+        </div>
+      )
+    },
+    {
+      key: 'total',
+      header: 'Total',
+      render: (value) => (
+        <div className="text-sm font-medium text-gray-900">
+          ₹{parseFloat(value || 0).toFixed(2)}
+        </div>
+      )
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (value, row) => {
+        const validUntil = new Date(row.validUntil);
+        const today = new Date();
+        const isExpired = validUntil < today;
+        const colorClass = isExpired ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800';
+        const status = isExpired ? 'Expired' : 'Valid';
+        
+        return (
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${colorClass}`}>
+            {status}
+          </span>
+        );
+      }
+    }
+  ];
 
   useEffect(() => {
     fetchProformaInvoices();
@@ -34,6 +126,11 @@ const ProformaInvoices = () => {
     fetchItems();
     fetchProfile();
   }, []);
+
+  // Reset pagination when search term changes
+  useEffect(() => {
+    resetToFirstPage();
+  }, [searchTerm, resetToFirstPage]);
 
   useEffect(() => {
     if (formData.clientId) {
@@ -128,7 +225,7 @@ const ProformaInvoices = () => {
 
   const handleDelete = async (id) => {
     const proformaInvoice = proformaInvoices.find(pi => pi.id === id);
-    const message = `Are you sure you want to delete the proforma invoice "${proformaInvoice?.proformaNo}"? This action cannot be undone.`;
+    const message = `Are you sure you want to delete the proforma invoice "${proformaInvoice?.proformaInvoiceNo}"? This action cannot be undone.`;
     
     showConfirmModal(
       'Delete Proforma Invoice',
@@ -140,6 +237,7 @@ const ProformaInvoices = () => {
           console.log('Delete response:', response.data);
           showErrorModal('Success', 'Proforma invoice deleted successfully!', 'success');
           fetchProformaInvoices();
+          resetToFirstPage(); // Reset pagination after deletion
         } catch (error) {
           console.error('Error deleting proforma invoice:', error);
           console.error('Error response:', error.response?.data);
@@ -167,172 +265,82 @@ const ProformaInvoices = () => {
     );
   };
 
-  const handlePrintProformaInvoice = async (proformaInvoiceId) => {
-    try {
-      console.log('Attempting to print Proforma Invoice...', proformaInvoiceId);
-      const proformaInvoiceResponse = await axios.get(`/proformas/${proformaInvoiceId}`);
-      const proformaInvoice = proformaInvoiceResponse.data;
-
-      const profileResponse = await axios.get('/profiles'); // Fetch company profile
-      const companyProfile = profileResponse.data.length > 0 ? profileResponse.data[0] : {};
-
-      if (!proformaInvoice) {
-        showErrorModal('Error', 'Proforma Invoice not found for printing', 'error');
-        return;
-      }
-
-      // Ensure proformaInvoice.items is an array for mapping
-      if (!proformaInvoice.items) {
-        proformaInvoice.items = [];
-      }
-
+  const handlePrint = (proformaInvoice) => {
+    // Create a new window for printing
       const printWindow = window.open('', '_blank');
-      if (!printWindow) {
-        showErrorModal('Error', 'Please allow pop-ups for printing', 'error');
-        return;
-      }
-
-      const proformaInvoiceHtml = `
+    printWindow.document.write(`
+      <!DOCTYPE html>
         <html>
           <head>
-            <title>Proforma Invoice #${proformaInvoice.proformaNo}</title>
+          <title>Proforma Invoice - ${proformaInvoice.proformaInvoiceNo}</title>
             <style>
-              body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; }
-              .invoice-page { width: 210mm; min-height: 297mm; margin: 10mm auto; border: 1px solid #eee; background: #fff; padding: 20mm; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
-              .header-section { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
-              .company-info h1 { margin: 0; font-size: 28px; color: #333; }
-              .company-info p { margin: 2px 0; font-size: 14px; color: #555; }
-              .invoice-title { font-size: 40px; font-weight: bold; color: #333; margin-top: 0; }
-              .invoice-meta { margin-top: 10px; text-align: right; font-size: 14px; }
-              .invoice-meta div { margin-bottom: 5px; }
-
-              .address-section { display: flex; justify-content: space-between; margin-bottom: 30px; }
-              .address-box { border: 1px solid #eee; padding: 15px; width: 48%; }
-              .address-box h3 { margin-top: 0; font-size: 16px; color: #333; }
-              .address-box p { margin: 2px 0; font-size: 14px; color: #555; }
-
-              .item-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-              .item-table th, .item-table td { border: 1px solid #eee; padding: 10px; text-align: left; font-size: 14px; }
-              .item-table th { background-color: #f9f9f9; font-weight: bold; color: #333; }
-
-              .summary-section { display: flex; justify-content: flex-end; margin-bottom: 30px; }
-              .summary-box { width: 40%; border: 1px solid #eee; }
-              .summary-row { display: flex; justify-content: space-between; padding: 8px 15px; border-bottom: 1px solid #eee; }
-              .summary-row:last-child { border-bottom: none; }
-              .summary-row.total { background-color: #f2f2f2; font-weight: bold; font-size: 16px; }
-
-              .terms-conditions { font-size: 13px; color: #555; margin-bottom: 30px; }
-              .footer-section { text-align: center; font-size: 12px; color: #777; border-top: 1px solid #eee; padding-top: 15px; }
-              @media print {
-                .invoice-page { box-shadow: none; border: none; }
-              }
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; margin-bottom: 30px; }
+            .invoice-details { margin-bottom: 20px; }
+            .client-details { margin-bottom: 20px; }
+            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            .items-table th, .items-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            .items-table th { background-color: #f2f2f2; }
+            .totals { text-align: right; margin-top: 20px; }
+            .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #666; }
+            @media print { body { margin: 0; } }
             </style>
           </head>
           <body>
-            <div class="invoice-page">
-              <div class="header-section">
-                <div class="company-info">
-                  ${companyProfile.logo ? `<img src="${companyProfile.logo}" alt="Company Logo" style="height: 60px; margin-bottom: 10px;"/>` : ''}
-                  <h1>${companyProfile.companyName || 'Your Company Name'}</h1>
-                  <p>${companyProfile.address || 'Your Company Address'}</p>
-                  <p>${companyProfile.city || 'City'}, ${companyProfile.state || 'State'} ${companyProfile.pinCode || 'PIN'}</p>
-                  <p>Email: ${companyProfile.email || 'N/A'} | Phone: ${companyProfile.phone || 'N/A'}</p>
-                  ${companyProfile.website ? `<p>Website: ${companyProfile.website}</p>` : ''}
-                  ${companyProfile.serviceTaxNo ? `<p>Service Tax No: ${companyProfile.serviceTaxNo}</p>` : ''}
+          <div class="header">
+            <h1>PROFORMA INVOICE</h1>
+            <h2>${proformaInvoice.proformaInvoiceNo}</h2>
                 </div>
-                <div>
-                  <h2 class="invoice-title">PROFORMA INVOICE</h2>
-                  <div class="invoice-meta">
-                    <div><strong>Proforma No:</strong> ${proformaInvoice.proformaNo}</div>
-                    <div><strong>Proforma Date:</strong> ${new Date(proformaInvoice.proformaDate).toLocaleDateString()}</div>
-                    <div><strong>Valid Until:</strong> ${new Date(proformaInvoice.validUntil).toLocaleDateString()}</div>
-                    ${proformaInvoice.poNumber ? `<div><strong>PO Number:</strong> ${proformaInvoice.poNumber}</div>` : ''}
-                  </div>
-                </div>
+          
+          <div class="invoice-details">
+            <p><strong>Proforma Date:</strong> ${new Date(proformaInvoice.proformaInvoiceDate).toLocaleDateString()}</p>
+            <p><strong>Valid Until:</strong> ${new Date(proformaInvoice.validUntil).toLocaleDateString()}</p>
               </div>
 
-              <div class="address-section">
-                <div class="address-box">
+          <div class="client-details">
                   <h3>Bill To:</h3>
-                  <p><strong>${proformaInvoice.client?.companyName || 'Client Name'}</strong></p>
-                  <p>${proformaInvoice.client?.billingAddress || 'Client Address'}</p>
-                  <p>${proformaInvoice.client?.city || 'City'}, ${proformaInvoice.client?.state || 'State'} ${proformaInvoice.client?.pinCode || 'PIN'}</p>
-                  <p>Email: ${proformaInvoice.client?.email || 'N/A'}</p>
-                  <p>Phone: ${proformaInvoice.client?.phone || 'N/A'}</p>
-                  ${proformaInvoice.client?.gstin ? `<p>GSTIN: ${proformaInvoice.client.gstin}</p>` : ''}
-                </div>
-                <div class="address-box">
-                  <h3>Ship To:</h3>
-                  <p><strong>${proformaInvoice.client?.companyName || 'Client Name'}</strong></p>
-                  <p>${proformaInvoice.client?.shippingAddress || 'Client Address'}</p>
-                  <p>${proformaInvoice.client?.city || 'City'}, ${proformaInvoice.client?.state || 'State'} ${proformaInvoice.client?.pinCode || 'PIN'}</p>
-                </div>
+            <p><strong>${proformaInvoice.client?.companyName || 'N/A'}</strong></p>
+            <p>${proformaInvoice.client?.address || 'N/A'}</p>
+            <p>${proformaInvoice.client?.city || ''}, ${proformaInvoice.client?.state || ''} ${proformaInvoice.client?.pinCode || ''}</p>
               </div>
 
-              <table class="item-table">
+          <table class="items-table">
                 <thead>
                   <tr>
-                    <th>#</th>
-                    <th>Item & Description</th>
+                <th>Item</th>
+                <th>Description</th>
                     <th>Qty</th>
-                    <th>Unit</th>
                     <th>Unit Price</th>
-                    <th>Discount</th>
-                    <th>Amount</th>
+                <th>Total</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${(proformaInvoice.items || []).map((item, index) => `
-                    <tr>
-                      <td>${index + 1}</td>
-                      <td>
-                        <strong>${items.find(i => i.id.toString() === item.itemId)?.name || 'N/A'}</strong><br/>
-                        <span style="font-size: 12px; color: #777;">${item.description || ''}</span>
-                      </td>
+              ${proformaInvoice.items?.map(item => `
+                <tr>
+                  <td>${item.item?.name || 'N/A'}</td>
+                  <td>${item.description || ''}</td>
                       <td>${item.quantity}</td>
-                      <td>${item.unit}</td>
-                      <td>${formatCurrency(item.price)}</td>
-                      <td>${item.discountPercent || '0'}%</td>
-                      <td>${formatCurrency(item.total)}</td>
+                  <td>₹${item.price}</td>
+                  <td>₹${item.total}</td>
                     </tr>
-                  `).join('')}
+              `).join('') || ''}
                 </tbody>
               </table>
 
-              <div class="summary-section">
-                <div class="summary-box">
-                  <div class="summary-row"><span>Subtotal:</span><span>${formatCurrency(proformaInvoice.subtotal || 0)}</span></div>
-                  <div class="summary-row total"><span>TOTAL:</span><span>${formatCurrency(proformaInvoice.total || 0)}</span></div>
-                </div>
+          <div class="totals">
+            <p><strong>Subtotal:</strong> ₹${proformaInvoice.subtotal || 0}</p>
+            <p><strong>Tax:</strong> ₹${proformaInvoice.tax || 0}</p>
+            <p><strong>Total Amount:</strong> ₹${proformaInvoice.amount || 0}</p>
               </div>
 
-              ${proformaInvoice.terms ? `<div class="terms-conditions">
-                <strong>Terms and Conditions:</strong>
-                <p>${proformaInvoice.terms}</p>
-              </div>` : ''}
-
-              <div class="footer-section">
-                <p>${companyProfile.companyName || 'Your Company Name'} | ${companyProfile.address || 'Your Company Address'}</p>
-                <p>Email: ${companyProfile.email || 'N/A'} | Phone: ${companyProfile.phone || 'N/A'} | Website: ${companyProfile.website || 'N/A'}</p>
-                ${companyProfile.bankDetails && companyProfile.bankDetails.length > 0 ? `
-                  <p>Bank: ${companyProfile.bankDetails[0].bankName} | A/C No: ${companyProfile.bankDetails[0].accountNumber} | IFSC: ${companyProfile.bankDetails[0].ifscCode}</p>
-                ` : ''}
-                <p>Thank you for your business!</p>
-              </div>
+          <div class="footer">
+            <p>This is a proforma invoice and is not a tax document</p>
             </div>
           </body>
         </html>
-      `;
-
-      printWindow.document.write(proformaInvoiceHtml);
+    `);
       printWindow.document.close();
-      printWindow.focus();
       printWindow.print();
-
-    } catch (error) {
-      console.error('Error printing Proforma Invoice:', error);
-      showErrorModal('Error', getErrorMessage(error, 'Failed to print Proforma Invoice'), getErrorType(error));
-    }
   };
 
   const handleSubmit = async (e) => {
@@ -372,6 +380,7 @@ const ProformaInvoices = () => {
       setEditingProformaInvoice(null);
       resetForm();
       fetchProformaInvoices();
+      resetToFirstPage(); // Reset pagination after data change
     } catch (error) {
       showErrorModal('Error', getErrorMessage(error, 'Failed to save proforma invoice'), getErrorType(error));
     }
@@ -381,9 +390,9 @@ const ProformaInvoices = () => {
     setEditingProformaInvoice(proformaInvoice);
     setFormData({
       clientId: proformaInvoice.clientId.toString(),
-      proformaNo: proformaInvoice.proformaNo,
+      proformaInvoiceNo: proformaInvoice.proformaInvoiceNo,
       poNumber: proformaInvoice.poNumber || '',
-      proformaDate: new Date(proformaInvoice.proformaDate).toISOString().split('T')[0],
+      proformaInvoiceDate: new Date(proformaInvoice.proformaInvoiceDate).toISOString().split('T')[0],
       validUntil: new Date(proformaInvoice.validUntil).toISOString().split('T')[0],
       items: proformaInvoice.items?.map(item => ({
         itemId: item.itemId?.toString() || '',
@@ -401,9 +410,9 @@ const ProformaInvoices = () => {
   const resetForm = () => {
     setFormData({
       clientId: '',
-      proformaNo: '',
+      proformaInvoiceNo: '',
       poNumber: '',
-      proformaDate: new Date().toISOString().split('T')[0],
+      proformaInvoiceDate: new Date().toISOString().split('T')[0],
       validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       items: [],
       quotationId: ''
@@ -506,93 +515,63 @@ const ProformaInvoices = () => {
 
   return (
     <div className="p-8">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Proforma Invoices</h1>
-          <p className="text-gray-600">Manage your proforma invoices</p>
-        </div>
-        <button 
-          onClick={() => {
-            console.log('Opening modal for new proforma invoice');
-            setShowModal(true);
-          }}
-          className="btn btn-primary"
-        >
-          <span className="mr-2">➕</span>
+      {/* Header */}
+      <PageHeader
+        title="Proforma Invoices"
+        subtitle="Manage your proforma invoices"
+        actionButton={
+          <ActionButton
+            onClick={() => setShowModal(true)}
+            variant="primary"
+            size="lg"
+            icon={
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+            }
+          >
           Create Proforma Invoice
-        </button>
-      </div>
+          </ActionButton>
+        }
+      />
 
-      <div className="card">
-        <div className="card-content">
-          {proformaInvoices.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Proforma #</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Client</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Date</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Valid Until</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {proformaInvoices.map((invoice) => (
-                    <tr key={invoice.id} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4 font-medium">{invoice.proformaNo}</td>
-                      <td className="py-3 px-4">{invoice.client?.companyName || 'N/A'}</td>
-                      <td className="py-3 px-4 text-sm">
-                        {new Date(invoice.proformaDate).toLocaleDateString()}
-                      </td>
-                      <td className="py-3 px-4 text-sm">
-                        {new Date(invoice.validUntil).toLocaleDateString()}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="flex space-x-2">
-                          <button 
-                            onClick={() => handleEdit(invoice)}
-                            className="text-blue-600 hover:text-blue-800"
-                          >
-                            ✏️
-                          </button>
-                          <button 
-                            className="text-green-600 hover:text-green-800 p-2 rounded hover:bg-green-50 transition-colors"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              handlePrintProformaInvoice(invoice.id);
-                            }}
-                            type="button"
-                            title="Print Proforma Invoice"
-                            aria-label="Print Proforma Invoice"
-                          >
-                            📄
-                          </button>
-                          <button
-                            onClick={() => {
-                              console.log('Delete button clicked for proforma invoice ID:', invoice.id);
-                              handleDelete(invoice.id);
-                            }}
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <span className="text-4xl mb-4 block"></span>
-              <p>No proforma invoices found</p>
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Search */}
+      <SearchBar
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        placeholder="Search by proforma number, client, or total..."
+        label="Search Proforma Invoices"
+      />
+
+      {/* Results Summary */}
+      <ResultsSummary
+        totalItems={totalItems}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        searchTerm={searchTerm}
+        itemName="proforma invoice"
+      />
+
+      {/* Proforma Invoices Table */}
+      <DataTable
+        columns={columns}
+        data={paginatedProformaInvoices}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        onPrint={handlePrint}
+        emptyMessage="No proforma invoices found"
+        emptyIcon="📋"
+      />
+
+      {/* Pagination */}
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={handlePageChange}
+        totalItems={totalItems}
+        itemsPerPage={itemsPerPage}
+        onItemsPerPageChange={handleItemsPerPageChange}
+      />
 
       {/* Modal */}
       {showModal && (
@@ -657,7 +636,7 @@ const ProformaInvoices = () => {
                   <div className="form-group">
                     <ReadOnlyDocumentNumber
                       label="Proforma Number *"
-                      value={formData.proformaNo}
+                      value={formData.proformaInvoiceNo}
                       tooltip="This number is auto-generated by the system and cannot be changed."
                     />
                   </div>
@@ -677,8 +656,8 @@ const ProformaInvoices = () => {
                     <input
                       type="date"
                       name="proformaDate"
-                      value={formData.proformaDate}
-                      onChange={(e) => setFormData({...formData, proformaDate: e.target.value})}
+                      value={formData.proformaInvoiceDate}
+                      onChange={(e) => setFormData({...formData, proformaInvoiceDate: e.target.value})}
                       className="form-input"
                       required
                     />
@@ -700,13 +679,14 @@ const ProformaInvoices = () => {
                 <div className="border-t pt-4">
                   <div className="flex justify-between items-center mb-4">
                     <h4 className="text-lg font-semibold">Proforma Invoice Items</h4>
-                    <button
+                    <ActionButton
                       type="button"
                       onClick={addItem}
-                      className="btn btn-primary btn-sm"
+                      variant="primary"
+                      size="sm"
                     >
                       Add Item
-                    </button>
+                    </ActionButton>
                   </div>
                   {formData.items.length > 0 ? (
                     <div className="overflow-x-auto">
@@ -822,20 +802,25 @@ const ProformaInvoices = () => {
                 </div>
 
                 <div className="flex justify-end space-x-3 pt-4">
-                  <button
-                    type="button"
+                  <ActionButton
                     onClick={() => {
                       setShowModal(false);
                       setEditingProformaInvoice(null);
                       resetForm();
                     }}
-                    className="btn btn-secondary"
+                    variant="secondary"
+                    size="md"
                   >
                     Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary" disabled={companyCodeMissing || profileLoading}>
-                    {editingProformaInvoice ? 'Update' : 'Create'} Proforma Invoice
-                  </button>
+                  </ActionButton>
+                  <ActionButton
+                    type="submit"
+                    variant="primary"
+                    size="md"
+                    disabled={companyCodeMissing || profileLoading}
+                  >
+                    {editingProformaInvoice ? 'Update Proforma Invoice' : 'Create Proforma Invoice'}
+                  </ActionButton>
                 </div>
                 {companyCodeMissing && !profileLoading && (
                   <div className="text-red-600 text-sm mt-2">

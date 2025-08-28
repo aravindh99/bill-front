@@ -2,6 +2,13 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import ModernModal from '../components/ModernModal';
 import ConfirmModal from '../components/ConfirmModal';
+import Pagination from '../components/Pagination';
+import usePagination from '../hooks/usePagination';
+import DataTable from '../components/DataTable';
+import SearchBar from '../components/SearchBar';
+import PageHeader from '../components/PageHeader';
+import ActionButton from '../components/ActionButton';
+import ResultsSummary from '../components/ResultsSummary';
 import { formatRelatedRecords, getErrorMessage, getErrorType } from '../utils/errorHelpers.jsx';
 import ReadOnlyDocumentNumber from '../components/ReadOnlyDocumentNumber';
 
@@ -25,6 +32,88 @@ const PurchaseOrders = () => {
   });
   const [profileLoading, setProfileLoading] = useState(true);
   const [companyCodeMissing, setCompanyCodeMissing] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Filter purchase orders based on search term
+  const filteredPurchaseOrders = purchaseOrders.filter(po =>
+    po.poNo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    po.vendor?.companyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    po.total?.toString().includes(searchTerm)
+  );
+
+  // Use pagination hook with filtered data
+  const {
+    currentData: paginatedPurchaseOrders,
+    totalItems,
+    totalPages,
+    currentPage,
+    itemsPerPage,
+    handlePageChange,
+    handleItemsPerPageChange,
+    resetToFirstPage
+  } = usePagination(filteredPurchaseOrders, 25);
+
+  // Table columns configuration
+  const columns = [
+    {
+      key: 'poNo',
+      header: 'PO Number',
+      render: (value) => (
+        <div className="text-sm font-medium text-gray-900">{value}</div>
+      )
+    },
+    {
+      key: 'vendor',
+      header: 'Vendor',
+      render: (value) => (
+        <div className="text-sm text-gray-900">{value?.companyName || '-'}</div>
+      )
+    },
+    {
+      key: 'orderDate',
+      header: 'Order Date',
+      render: (value) => (
+        <div className="text-sm text-gray-900">
+          {value ? new Date(value).toLocaleDateString() : '-'}
+        </div>
+      )
+    },
+    {
+      key: 'validUntil',
+      header: 'Valid Until',
+      render: (value) => (
+        <div className="text-sm text-gray-900">
+          {value ? new Date(value).toLocaleDateString() : '-'}
+        </div>
+      )
+    },
+    {
+      key: 'total',
+      header: 'Total',
+      render: (value) => (
+        <div className="text-sm font-medium text-gray-900">
+          ₹{parseFloat(value || 0).toFixed(2)}
+        </div>
+      )
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (value, row) => {
+        const validUntil = new Date(row.validUntil);
+        const today = new Date();
+        const isExpired = validUntil < today;
+        const colorClass = isExpired ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800';
+        const status = isExpired ? 'Expired' : 'Valid';
+        
+        return (
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${colorClass}`}>
+            {status}
+          </span>
+        );
+      }
+    }
+  ];
 
   useEffect(() => {
     fetchPurchaseOrders();
@@ -32,6 +121,11 @@ const PurchaseOrders = () => {
     fetchItems();
     fetchProfile();
   }, []);
+
+  // Reset pagination when search term changes
+  useEffect(() => {
+    resetToFirstPage();
+  }, [searchTerm, resetToFirstPage]);
 
   const fetchPurchaseOrders = async () => {
     try {
@@ -103,6 +197,7 @@ const PurchaseOrders = () => {
           console.log('Delete response:', _response.data);
           showErrorModal('Success', 'Purchase order deleted successfully!', 'success');
           fetchPurchaseOrders();
+          resetToFirstPage(); // Reset pagination after deletion
         } catch (error) {
           console.error('Error deleting purchase order:', error);
           console.error('Error response:', error.response?.data);
@@ -128,6 +223,84 @@ const PurchaseOrders = () => {
         }
       }
     );
+  };
+
+  const handlePrint = (purchaseOrder) => {
+    // Create a new window for printing
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Purchase Order - ${purchaseOrder.poNo}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; margin-bottom: 30px; }
+            .po-details { margin-bottom: 20px; }
+            .vendor-details { margin-bottom: 20px; }
+            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            .items-table th, .items-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            .items-table th { background-color: #f2f2f2; }
+            .totals { text-align: right; margin-top: 20px; }
+            .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #666; }
+            @media print { body { margin: 0; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>PURCHASE ORDER</h1>
+            <h2>${purchaseOrder.poNo}</h2>
+          </div>
+          
+          <div class="po-details">
+            <p><strong>Order Date:</strong> ${new Date(purchaseOrder.orderDate).toLocaleDateString()}</p>
+            <p><strong>Valid Until:</strong> ${new Date(purchaseOrder.validUntil).toLocaleDateString()}</p>
+          </div>
+          
+          <div class="vendor-details">
+            <h3>Vendor:</h3>
+            <p><strong>${purchaseOrder.vendor?.companyName || 'N/A'}</strong></p>
+            <p>${purchaseOrder.vendor?.billingAddress || 'N/A'}</p>
+            <p>${purchaseOrder.vendor?.city || ''}, ${purchaseOrder.vendor?.state || ''} ${purchaseOrder.vendor?.pinCode || ''}</p>
+          </div>
+          
+          <table class="items-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Description</th>
+                <th>Qty</th>
+                <th>Unit Price</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${purchaseOrder.items?.map(item => `
+                <tr>
+                  <td>${items.find(i => i.id.toString() === item.itemId)?.name || 'N/A'}</td>
+                  <td>${item.description || ''}</td>
+                  <td>${item.quantity}</td>
+                  <td>₹${item.price}</td>
+                  <td>₹${item.total}</td>
+                </tr>
+              `).join('') || ''}
+            </tbody>
+          </table>
+          
+          <div class="totals">
+            <p><strong>Subtotal:</strong> ₹${purchaseOrder.subtotal || 0}</p>
+            <p><strong>Tax:</strong> ₹${purchaseOrder.tax || 0}</p>
+            <p><strong>Total Amount:</strong> ₹${purchaseOrder.total || 0}</p>
+          </div>
+          
+          <div class="footer">
+            <p>This purchase order is valid until ${new Date(purchaseOrder.validUntil).toLocaleDateString()}</p>
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
   };
 
   // New function for printing purchase order
@@ -332,6 +505,7 @@ const PurchaseOrders = () => {
       setEditingPurchaseOrder(null);
       resetForm();
       fetchPurchaseOrders();
+      resetToFirstPage(); // Reset pagination after data change
     } catch (error) {
       console.error('Error saving purchase order:', error);
       console.error('Error response:', error.response?.data);
@@ -474,90 +648,63 @@ const PurchaseOrders = () => {
 
   return (
     <div className="p-8">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Purchase Orders</h1>
-          <p className="text-gray-600">Manage your purchase orders</p>
-        </div>
-        <button 
-          onClick={() => {
-            console.log('Opening modal for new purchase order');
-            setShowModal(true);
-          }}
-          className="btn btn-primary"
-        >
-          <span className="mr-2">➕</span>
+      {/* Header */}
+      <PageHeader
+        title="Purchase Orders"
+        subtitle="Manage your purchase orders"
+        actionButton={
+          <ActionButton
+            onClick={() => setShowModal(true)}
+            variant="primary"
+            size="lg"
+            icon={
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+            }
+          >
           Create PO
-        </button>
-      </div>
+          </ActionButton>
+        }
+      />
 
-      <div className="card">
-        <div className="card-content">
-          {purchaseOrders.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">PO #</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Vendor</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Date</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Expected Delivery</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Total</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {purchaseOrders.map((po) => (
-                    <tr key={po.id} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4 font-medium">{po.poNo}</td>
-                      <td className="py-3 px-4">{po.vendor?.companyName || 'N/A'}</td>
-                      <td className="py-3 px-4 text-sm">
-                        {new Date(po.orderDate).toLocaleDateString()}
-                      </td>
-                      <td className="py-3 px-4 text-sm">
-                        {new Date(po.validUntil).toLocaleDateString()}
-                      </td>
-                      <td className="py-3 px-4 font-medium">
-                        {formatCurrency(po.total)}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="flex space-x-2">
-                          <button 
-                            className="text-blue-600 hover:text-blue-800"
-                            onClick={() => handleEdit(po)}
-                          >
-                            ✏️
-                          </button>
-                          <button 
-                            className="text-green-600 hover:text-green-800"
-                            onClick={() => handlePrintPurchaseOrder(po.id)}
-                          >
-                            📄
-                          </button>
-                          <button
-                            onClick={() => {
-                              console.log('Delete button clicked for purchase order ID:', po.id);
-                              handleDelete(po.id);
-                            }}
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <span className="text-4xl mb-4 block">📋</span>
-              <p>No purchase orders found</p>
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Search */}
+      <SearchBar
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        placeholder="Search by PO number, vendor, or total..."
+        label="Search Purchase Orders"
+      />
+
+      {/* Results Summary */}
+      <ResultsSummary
+        totalItems={totalItems}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        searchTerm={searchTerm}
+        itemName="purchase order"
+      />
+
+      {/* Purchase Orders Table */}
+      <DataTable
+        columns={columns}
+        data={paginatedPurchaseOrders}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        onPrint={handlePrint}
+        emptyMessage="No purchase orders found"
+        emptyIcon="🛒"
+      />
+
+      {/* Pagination */}
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={handlePageChange}
+        totalItems={totalItems}
+        itemsPerPage={itemsPerPage}
+        onItemsPerPageChange={handleItemsPerPageChange}
+      />
 
       {/* Modal */}
       {showModal && (
@@ -632,13 +779,14 @@ const PurchaseOrders = () => {
                 <div className="border-t pt-4">
                   <div className="flex justify-between items-center mb-4">
                     <h4 className="text-lg font-semibold">Purchase Order Items</h4>
-                    <button
+                    <ActionButton
                       type="button"
                       onClick={addItem}
-                      className="btn btn-primary btn-sm"
+                      variant="primary"
+                      size="sm"
                     >
                       Add Item
-                    </button>
+                    </ActionButton>
                   </div>
                   {formData.items.length > 0 ? (
                     <div className="overflow-x-auto">
@@ -780,20 +928,25 @@ const PurchaseOrders = () => {
                 </div>
 
                 <div className="flex justify-end space-x-3 pt-4">
-                  <button
-                    type="button"
+                  <ActionButton
                     onClick={() => {
                       setShowModal(false);
                       setEditingPurchaseOrder(null);
                       resetForm();
                     }}
-                    className="btn btn-secondary"
+                    variant="secondary"
+                    size="md"
                   >
                     Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary" disabled={companyCodeMissing || profileLoading}>
-                    {editingPurchaseOrder ? 'Update' : 'Create'} Purchase Order
-                  </button>
+                  </ActionButton>
+                  <ActionButton
+                    type="submit"
+                    variant="primary"
+                    size="md"
+                    disabled={companyCodeMissing || profileLoading}
+                  >
+                    {editingPurchaseOrder ? 'Update Purchase Order' : 'Create Purchase Order'}
+                  </ActionButton>
                 </div>
                 {companyCodeMissing && !profileLoading && (
                   <div className="text-red-600 text-sm mt-2">

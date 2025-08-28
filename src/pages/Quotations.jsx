@@ -2,6 +2,13 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import ModernModal from '../components/ModernModal';
 import ConfirmModal from '../components/ConfirmModal';
+import Pagination from '../components/Pagination';
+import usePagination from '../hooks/usePagination';
+import DataTable from '../components/DataTable';
+import SearchBar from '../components/SearchBar';
+import PageHeader from '../components/PageHeader';
+import ActionButton from '../components/ActionButton';
+import ResultsSummary from '../components/ResultsSummary';
 import { formatRelatedRecords, getErrorMessage, getErrorType } from '../utils/errorHelpers.jsx';
 import ReadOnlyDocumentNumber from '../components/ReadOnlyDocumentNumber';
 
@@ -26,6 +33,92 @@ const Quotations = () => {
   });
   const [profileLoading, setProfileLoading] = useState(true);
   const [companyCodeMissing, setCompanyCodeMissing] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Filter quotations based on search term
+  const filteredQuotations = quotations.filter(quotation =>
+    quotation.quotationNo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    quotation.client?.companyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    quotation.poNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    quotation.total?.toString().includes(searchTerm)
+  );
+
+  // Use pagination hook with filtered data
+  const {
+    currentData: paginatedQuotations,
+    totalItems,
+    totalPages,
+    currentPage,
+    itemsPerPage,
+    handlePageChange,
+    handleItemsPerPageChange,
+    resetToFirstPage
+  } = usePagination(filteredQuotations, 25);
+
+  // Table columns configuration
+  const columns = [
+    {
+      key: 'quotationNo',
+      header: 'Quotation No',
+      render: (value, row) => (
+        <div>
+          <div className="text-sm font-medium text-gray-900">{value}</div>
+          {row.poNumber && <div className="text-xs text-gray-500">PO: {row.poNumber}</div>}
+        </div>
+      )
+    },
+    {
+      key: 'client',
+      header: 'Client',
+      render: (value) => (
+        <div className="text-sm text-gray-900">{value?.companyName || '-'}</div>
+      )
+    },
+    {
+      key: 'quotationDate',
+      header: 'Date',
+      render: (value) => (
+        <div className="text-sm text-gray-900">
+          {value ? new Date(value).toLocaleDateString() : '-'}
+        </div>
+      )
+    },
+    {
+      key: 'validUntil',
+      header: 'Valid Until',
+      render: (value) => (
+        <div className="text-sm text-gray-900">
+          {value ? new Date(value).toLocaleDateString() : '-'}
+        </div>
+      )
+    },
+    {
+      key: 'total',
+      header: 'Total',
+      render: (value) => (
+        <div className="text-sm font-medium text-gray-900">
+          ₹{parseFloat(value || 0).toFixed(2)}
+        </div>
+      )
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (value, row) => {
+        const validUntil = new Date(row.validUntil);
+        const today = new Date();
+        const isExpired = validUntil < today;
+        const colorClass = isExpired ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800';
+        const status = isExpired ? 'Expired' : 'Valid';
+        
+        return (
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${colorClass}`}>
+            {status}
+          </span>
+        );
+      }
+    }
+  ];
 
   useEffect(() => {
     fetchQuotations();
@@ -33,6 +126,11 @@ const Quotations = () => {
     fetchItems();
     fetchProfile();
   }, []);
+
+  // Reset pagination when search term changes
+  useEffect(() => {
+    resetToFirstPage();
+  }, [searchTerm, resetToFirstPage]);
 
   const fetchQuotations = async () => {
     try {
@@ -91,205 +189,94 @@ const Quotations = () => {
   };
 
   const handleDelete = async (id) => {
-    const quotation = quotations.find(q => q.id === id);
-    const message = `Are you sure you want to delete the quotation "${quotation?.quotationNo}"? This action cannot be undone.`;
-    
-    showConfirmModal(
-      'Delete Quotation',
-      message,
-      async () => {
-        try {
-          console.log('Deleting quotation with ID:', id);
-          const _response = await axios.delete(`/quotations/${id}`);
-          console.log('Delete response:', _response.data);
-          showErrorModal('Success', 'Quotation deleted successfully!', 'success');
+    if (window.confirm('Are you sure you want to delete this quotation?')) {
+      try {
+        await axios.delete(`/quotations/${id}`);
           fetchQuotations();
+        resetToFirstPage();
         } catch (error) {
           console.error('Error deleting quotation:', error);
-          console.error('Error response:', error.response?.data);
-          
-          let message = getErrorMessage(error, 'Error deleting quotation');
-          
-          // If there are related records, show them in the modal
-          if (error.response?.data?.relatedRecords) {
-            const relatedRecordsComponent = formatRelatedRecords(error.response.data.relatedRecords);
-            showErrorModal(
-              'Cannot Delete Quotation',
-              message,
-              'warning'
-            );
-            // We'll handle the related records in the modal children
-            setErrorModal(prev => ({
-              ...prev,
-              children: relatedRecordsComponent
-            }));
-          } else {
-            showErrorModal('Error', message, getErrorType(error));
-          }
-        }
+        showErrorModal('Error', getErrorMessage(error, 'Failed to delete quotation'), getErrorType(error));
       }
-    );
+    }
   };
-   const handlePrintQuotation= async (quotationId) => {
-      try {
-        const quotationResponse = await axios.get(`/quotations/${quotationId}`);
-        const quotation = quotationResponse.data;
-  
-        const profileResponse = await axios.get('/profiles'); // Fetch company profile
-        const companyProfile = profileResponse.data.length > 0 ? profileResponse.data[0] : {};
-  
-        if (!quotation) {
-          showErrorModal('Error', 'quotation not found for printing', 'error');
-          return;
-        }
-  
+
+  const handlePrint = (quotation) => {
+    // Create a new window for printing
         const printWindow = window.open('', '_blank');
-        if (!printWindow) {
-          showErrorModal('Error', 'Please allow pop-ups for printing', 'error');
-          return;
-        }
-  
-        const quotationHtml = `
+    printWindow.document.write(`
+      <!DOCTYPE html>
           <html>
             <head>
-              <title>quotation #${quotation.quotationNo}</title>
+          <title>Quotation - ${quotation.quotationNo}</title>
               <style>
-                body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; }
-                .quotation-page { width: 210mm; min-height: 297mm; margin: 10mm auto; border: 1px solid #eee; background: #fff; padding: 20mm; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
-                .header-section { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
-                .company-info h1 { margin: 0; font-size: 28px; color: #333; }
-                .company-info p { margin: 2px 0; font-size: 14px; color: #555; }
-                .quotation-title { font-size: 40px; font-weight: bold; color: #333; margin-top: 0; }
-                .quotation-meta { margin-top: 10px; text-align: right; font-size: 14px; }
-                .quotation-meta div { margin-bottom: 5px; }
-  
-                .address-section { display: flex; justify-content: space-between; margin-bottom: 30px; }
-                .address-box { border: 1px solid #eee; padding: 15px; width: 48%; }
-                .address-box h3 { margin-top: 0; font-size: 16px; color: #333; }
-                .address-box p { margin: 2px 0; font-size: 14px; color: #555; }
-  
-                .item-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-                .item-table th, .item-table td { border: 1px solid #eee; padding: 10px; text-align: left; font-size: 14px; }
-                .item-table th { background-color: #f9f9f9; font-weight: bold; color: #333; }
-  
-                .summary-section { display: flex; justify-content: flex-end; margin-bottom: 30px; }
-                .summary-box { width: 40%; border: 1px solid #eee; }
-                .summary-row { display: flex; justify-content: space-between; padding: 8px 15px; border-bottom: 1px solid #eee; }
-                .summary-row:last-child { border-bottom: none; }
-                .summary-row.total { background-color: #f2f2f2; font-weight: bold; font-size: 16px; }
-  
-                .terms-conditions { font-size: 13px; color: #555; margin-bottom: 30px; }
-                .footer-section { text-align: center; font-size: 12px; color: #777; border-top: 1px solid #eee; padding-top: 15px; }
-                @media print {
-                  .quotation-page { box-shadow: none; border: none; }
-                }
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; margin-bottom: 30px; }
+            .quotation-details { margin-bottom: 20px; }
+            .client-details { margin-bottom: 20px; }
+            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            .items-table th, .items-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            .items-table th { background-color: #f2f2f2; }
+            .totals { text-align: right; margin-top: 20px; }
+            .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #666; }
+            @media print { body { margin: 0; } }
               </style>
             </head>
             <body>
-              <div class="quotation-page">
-                <div class="header-section">
-                  <div class="company-info">
-                    ${companyProfile.logo ? `<img src="${companyProfile.logo}" alt="Company Logo" style="height: 60px; margin-bottom: 10px;"/>` : ''}
-                    <h1>${companyProfile.companyName || 'Your Company Name'}</h1>
-                    <p>${companyProfile.address || 'Your Company Address'}</p>
-                    <p>${companyProfile.city || 'City'}, ${companyProfile.state || 'State'} ${companyProfile.pinCode || 'PIN'}</p>
-                    <p>Email: ${companyProfile.email || 'N/A'} | Phone: ${companyProfile.phone || 'N/A'}</p>
-                    ${companyProfile.website ? `<p>Website: ${companyProfile.website}</p>` : ''}
-                    ${companyProfile.serviceTaxNo ? `<p>Service Tax No: ${companyProfile.serviceTaxNo}</p>` : ''}
+          <div class="header">
+            <h1>QUOTATION</h1>
+            <h2>${quotation.quotationNo}</h2>
                   </div>
-                  <div>
-                    <h2 class="quotation-title">QUOTATION</h2>
-                    <div class="quotation-meta">
-                      <div><strong>Quotation No:</strong> ${quotation.quotationNo}</div>
-                      <div><strong>Quotation Date:</strong> ${new Date(quotation.quotationDate).toLocaleDateString()}</div>
-                      <div><strong>Valid Until:</strong> ${new Date(quotation.validUntil).toLocaleDateString()}</div>
-                      ${quotation.poNumber ? `<div><strong>PO No:</strong> ${quotation.poNumber}</div>` : ''}
-                    </div>
-                  </div>
+          
+          <div class="quotation-details">
+            <p><strong>Quotation Date:</strong> ${new Date(quotation.quotationDate).toLocaleDateString()}</p>
+            <p><strong>Valid Until:</strong> ${new Date(quotation.validUntil).toLocaleDateString()}</p>
                 </div>
   
-                <div class="address-section">
-                  <div class="address-box">
-                    <h3>Bill To:</h3>
-                    <p><strong>${quotation.client?.companyName || 'Client Name'}</strong></p>
-                    <p>${quotation.client?.billingAddress || 'Client Address'}</p>
-                    <p>${quotation.client?.city || 'City'}, ${quotation.client?.state || 'State'} ${quotation.client?.pinCode || 'PIN'}</p>
-                    <p>Email: ${quotation.client?.email || 'N/A'}</p>
-                    <p>Phone: ${quotation.client?.phone || 'N/A'}</p>
-                    ${quotation.client?.gstin ? `<p>GSTIN: ${quotation.client.gstin}</p>` : ''}
-                  </div>
-                  <div class="address-box">
-                    <h3>Ship To:</h3>
-                    <p><strong>${quotation.client?.companyName || 'Client Name'}</strong></p>
-                    <p>${quotation.client?.shippingAddress || 'Client Address'}</p>
-                    <p>${quotation.client?.city || 'City'}, ${quotation.client?.state || 'State'} ${quotation.client?.pinCode || 'PIN'}</p>
-                    <!-- Assuming shipping address is stored in client, or you can add it to quotation model if needed -->
-                  </div>
+          <div class="client-details">
+            <h3>Quote To:</h3>
+            <p><strong>${quotation.client?.companyName || 'N/A'}</strong></p>
+            <p>${quotation.client?.address || 'N/A'}</p>
+            <p>${quotation.client?.city || ''}, ${quotation.client?.state || ''} ${quotation.client?.pinCode || ''}</p>
                 </div>
   
-                <table class="item-table">
+          <table class="items-table">
                   <thead>
                     <tr>
-                      <th>#</th>
-                      <th>Item & Description</th>
+                <th>Item</th>
+                <th>Description</th>
                       <th>Qty</th>
                       <th>Unit Price</th>
-                      <th>Discount</th>
-                      <th>Amount</th>
+                <th>Total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    ${quotation.items.map((item, index) => `
-                      <tr>
-                        <td>${index + 1}</td>
-                        <td>
-                          <strong>${item.item?.name || 'N/A'}</strong><br/>
-                          <span style="font-size: 12px; color: #777;">${item.description || ''}</span>
-                        </td>
-                        <td>${item.quantity} ${item.unit}</td>
-                        <td>${formatCurrency(item.price)}</td>
-                        <td>${item.discountPercent || '0'}%</td>
-                        <td>${formatCurrency(item.total)}</td>
+              ${quotation.items?.map(item => `
+                <tr>
+                  <td>${item.item?.name || 'N/A'}</td>
+                  <td>${item.description || ''}</td>
+                  <td>${item.quantity}</td>
+                  <td>₹${item.price}</td>
+                  <td>₹${item.total}</td>
                       </tr>
-                    `).join('')}
+              `).join('') || ''}
                   </tbody>
                 </table>
   
-                <div class="summary-section">
-                  <div class="summary-box">
-                    <div class="summary-row"><span>Subtotal:</span><span>${formatCurrency(quotation.subtotal)}</span></div>
-                    <div class="summary-row total"><span>TOTAL:</span><span>${formatCurrency(quotation.total)}</span></div>
-                  </div>
+          <div class="totals">
+            <p><strong>Subtotal:</strong> ₹${quotation.subtotal || 0}</p>
+            <p><strong>Tax:</strong> ₹${quotation.tax || 0}</p>
+            <p><strong>Total Amount:</strong> ₹${quotation.amount || 0}</p>
                 </div>
   
-                ${quotation.termsConditions ? `<div class="terms-conditions">
-                  <strong>Terms and Conditions:</strong>
-                  <p>${quotation.termsConditions}</p>
-                </div>` : ''}
-  
-                <div class="footer-section">
-                  <p>${companyProfile.companyName || 'Your Company Name'} | ${companyProfile.address || 'Your Company Address'}</p>
-                  <p>Email: ${companyProfile.email || 'N/A'} | Phone: ${companyProfile.phone || 'N/A'} | Website: ${companyProfile.website || 'N/A'}</p>
-                  ${companyProfile.bankDetails && companyProfile.bankDetails.length > 0 ? `
-                    <p>Bank: ${companyProfile.bankDetails[0].bankName} | A/C No: ${companyProfile.bankDetails[0].accountNumber} | IFSC: ${companyProfile.bankDetails[0].ifscCode}</p>
-                  ` : ''}
-                  <p>Thank you for your business!</p>
-                </div>
+          <div class="footer">
+            <p>This quotation is valid until ${new Date(quotation.validUntil).toLocaleDateString()}</p>
               </div>
             </body>
           </html>
-        `;
-  
-        printWindow.document.write(quotationHtml);
+    `);
         printWindow.document.close();
-        printWindow.focus();
         printWindow.print();
-        // printWindow.close(); // Optionally close after printing, but can cause issues depending on browser settings
-  
-      } catch (_error) {
-        console.error('Error printing Quotation:', _error);
-        showErrorModal('Error', getErrorMessage(_error, 'Failed to print Quotation'), getErrorType(_error));
-      }
     };
 
   const handleSubmit = async (e) => {
@@ -330,6 +317,7 @@ const Quotations = () => {
       setEditingQuotation(null);
       resetForm();
       fetchQuotations();
+      resetToFirstPage(); // Reset pagination after data change
     } catch (error) {
       showErrorModal('Error', getErrorMessage(error, 'Failed to save quotation'), getErrorType(error));
     }
@@ -472,90 +460,63 @@ const Quotations = () => {
 
   return (
     <div className="p-8">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Quotations</h1>
-          <p className="text-gray-600">Manage your quotations</p>
-        </div>
-        <button 
-          onClick={() => {
-            console.log('Opening modal for new quotation');
-            setShowModal(true);
-          }}
-          className="btn btn-primary"
-        >
-          <span className="mr-2">➕</span>
+      {/* Header */}
+      <PageHeader
+        title="Quotations"
+        subtitle="Manage your quotations"
+        actionButton={
+          <ActionButton
+            onClick={() => setShowModal(true)}
+            variant="primary"
+            size="lg"
+            icon={
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+            }
+          >
           Create Quotation
-        </button>
-      </div>
+          </ActionButton>
+        }
+      />
 
-      <div className="card">
-        <div className="card-content">
-          {quotations.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Quotation #</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Client</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Date</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Valid Until</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Total</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {quotations.map((quotation) => (
-                    <tr key={quotation.id} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4 font-medium">{quotation.quotationNo}</td>
-                      <td className="py-3 px-4">{quotation.client?.companyName || 'N/A'}</td>
-                      <td className="py-3 px-4 text-sm">
-                        {new Date(quotation.quotationDate).toLocaleDateString()}
-                      </td>
-                      <td className="py-3 px-4 text-sm">
-                        {new Date(quotation.validUntil).toLocaleDateString()}
-                      </td>
-                      <td className="py-3 px-4 font-medium">
-                        {formatCurrency(quotation.total)}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="flex space-x-2">
-                          <button 
-                            className="text-blue-600 hover:text-blue-800"
-                            onClick={() => handleEdit(quotation)}
-                          >
-                            ✏️
-                          </button>
-                          <button 
-                            className="text-green-600 hover:text-green-800"
-                            onClick={() => handlePrintQuotation(quotation.id)}
-                          >
-                            📄
-                          </button>
-                          <button
-                            onClick={() => {
-                              console.log('Delete button clicked for quotation ID:', quotation.id);
-                              handleDelete(quotation.id);
-                            }}
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <span className="text-4xl mb-4 block">📋</span>
-              <p>No quotations found</p>
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Search */}
+      <SearchBar
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        placeholder="Search by quotation number, client, PO number, or total..."
+        label="Search Quotations"
+      />
+
+      {/* Results Summary */}
+      <ResultsSummary
+        totalItems={totalItems}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        searchTerm={searchTerm}
+        itemName="quotation"
+      />
+
+      {/* Quotations Table */}
+      <DataTable
+        columns={columns}
+        data={paginatedQuotations}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        onPrint={handlePrint}
+        emptyMessage="No quotations found"
+        emptyIcon="📋"
+      />
+
+      {/* Pagination */}
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={handlePageChange}
+        totalItems={totalItems}
+        itemsPerPage={itemsPerPage}
+        onItemsPerPageChange={handleItemsPerPageChange}
+      />
 
       {/* Modal */}
       {showModal && (
@@ -645,13 +606,14 @@ const Quotations = () => {
                 <div className="border-t pt-4">
                   <div className="flex justify-between items-center mb-4">
                     <h4 className="text-lg font-semibold">Quotation Items</h4>
-                    <button
+                    <ActionButton
                       type="button"
                       onClick={addItem}
-                      className="btn btn-primary btn-sm"
+                      variant="primary"
+                      size="sm"
                     >
                       Add Item
-                    </button>
+                    </ActionButton>
                   </div>
                   {formData.items.length > 0 ? (
                     <div className="overflow-x-auto">
@@ -797,20 +759,25 @@ const Quotations = () => {
                 </div>
 
                 <div className="flex justify-end space-x-3 pt-4">
-                  <button
-                    type="button"
+                  <ActionButton
                     onClick={() => {
                       setShowModal(false);
                       setEditingQuotation(null);
                       resetForm();
                     }}
-                    className="btn btn-secondary"
+                    variant="secondary"
+                    size="md"
                   >
                     Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary" disabled={companyCodeMissing || profileLoading}>
-                    {editingQuotation ? 'Update' : 'Create'} Quotation
-                  </button>
+                  </ActionButton>
+                  <ActionButton
+                    type="submit"
+                    variant="primary"
+                    size="md"
+                    disabled={companyCodeMissing || profileLoading}
+                  >
+                    {editingQuotation ? 'Update Quotation' : 'Create Quotation'}
+                  </ActionButton>
                 </div>
                 {companyCodeMissing && !profileLoading && (
                   <div className="text-red-600 text-sm mt-2">

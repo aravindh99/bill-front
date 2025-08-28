@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import HelpGuide from './HelpGuide';
+import ActionButton from './ActionButton';
 
 const DashboardLayout = ({ children }) => {
   const location = useLocation();
@@ -10,28 +11,28 @@ const DashboardLayout = ({ children }) => {
   const [showHelp, setShowHelp] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
 
-  const navigationItems = [
-    { name: 'Dashboard', path: '/dashboard', icon: '📊' },
-    { name: 'Clients', path: '/clients', icon: '👥' },
-    { name: 'Client Contacts', path: '/client-contacts', icon: '📞' },
-    { name: 'Invoices', path: '/invoices', icon: '📄' },
-    { name: 'Items', path: '/items', icon: '📦' },
-    { name: 'Vendors', path: '/vendors', icon: '🏢' },
-    { name: 'Vendor Contacts', path: '/vendor-contacts', icon: '📞' },
-    { name: 'Quotations', path: '/quotations', icon: '📋' },
-    { name: 'Purchase Orders', path: '/purchase-orders', icon: '🛒' },
-    { name: 'Proforma Invoices', path: '/proforma-invoices', icon: '📝' },
-    { name: 'Delivery Chalans', path: '/delivery-chalans', icon: '🚚' },
-    { name: 'Credit Notes', path: '/credit-notes', icon: '💳' },
-    { name: 'Debit Notes', path: '/debit-notes', icon: '💸' },
-    { name: 'Payments', path: '/payments', icon: '💰' },
-    { name: 'Profile', path: '/profile', icon: '⚙️' },
-  ];
-
   const handleLogout = () => {
     logout();
-    navigate('/dashboard');
+    navigate('/');
   };
+
+  const navigationItems = [
+    { path: '/dashboard', name: 'Dashboard', icon: '📊' },
+    { path: '/clients', name: 'Clients', icon: '👥' },
+    { path: '/client-contacts', name: 'Client Contacts', icon: '📞' },
+    { path: '/vendors', name: 'Vendors', icon: '🏢' },
+    { path: '/vendor-contacts', name: 'Vendor Contacts', icon: '📞' },
+    { path: '/items', name: 'Items', icon: '📦' },
+    { path: '/invoices', name: 'Invoices', icon: '📄' },
+    { path: '/quotations', name: 'Quotations', icon: '📋' },
+    { path: '/purchase-orders', name: 'Purchase Orders', icon: '🛒' },
+    { path: '/proforma-invoices', name: 'Proforma Invoices', icon: '📋' },
+    { path: '/delivery-chalans', name: 'Delivery Chalans', icon: '🚚' },
+    { path: '/credit-notes', name: 'Credit Notes', icon: '💳' },
+    { path: '/debit-notes', name: 'Debit Notes', icon: '💳' },
+    { path: '/payments', name: 'Payments', icon: '💰' },
+    { path: '/profile', name: 'Profile', icon: '⚙️' }
+  ];
 
   const renderHeader = () => (
     <div className="dashboard-header relative">
@@ -41,7 +42,11 @@ const DashboardLayout = ({ children }) => {
       <div className="flex items-center space-x-4">
         <button
           onClick={() => setShowHelp(true)}
-          className="btn btn-secondary text-sm"
+          className="flex items-center px-4 py-2 rounded-lg text-white font-medium transition-all duration-200 hover:shadow-lg"
+          style={{
+            background: 'linear-gradient(135deg, #211531, #9254de)',
+            boxShadow: '0 2px 8px rgba(64,18,178,0.10)'
+          }}
           title="Help Guide"
         >
           <span className="mr-2">❓</span>

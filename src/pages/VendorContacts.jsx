@@ -2,39 +2,122 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import ModernModal from '../components/ModernModal';
 import ConfirmModal from '../components/ConfirmModal';
+import Pagination from '../components/Pagination';
+import usePagination from '../hooks/usePagination';
+import DataTable from '../components/DataTable';
+import SearchBar from '../components/SearchBar';
+import PageHeader from '../components/PageHeader';
+import ActionButton from '../components/ActionButton';
+import ResultsSummary from '../components/ResultsSummary';
 import { formatRelatedRecords, getErrorMessage, getErrorType } from '../utils/errorHelpers.jsx';
 
 const VendorContacts = () => {
-  const [contacts, setContacts] = useState([]);
+  const [vendorContacts, setVendorContacts] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingContact, setEditingContact] = useState(null);
   const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '', type: 'error' });
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
   const [formData, setFormData] = useState({
     vendorId: '',
-    name: '',
+    contactName: '',
+    email: '',
     phone: '',
-    email: ''
+    designation: '',
+    isPrimary: false
   });
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Filter vendor contacts based on search term
+  const filteredVendorContacts = vendorContacts.filter(contact =>
+    contact.contactName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    contact.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    contact.phone?.includes(searchTerm) ||
+    contact.designation?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    contact.vendor?.companyName?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Use pagination hook with filtered data
+  const {
+    currentData: paginatedVendorContacts,
+    totalItems,
+    totalPages,
+    currentPage,
+    itemsPerPage,
+    handlePageChange,
+    handleItemsPerPageChange,
+    resetToFirstPage
+  } = usePagination(filteredVendorContacts, 25);
+
+  // Table columns configuration
+  const columns = [
+    {
+      key: 'vendor',
+      header: 'Vendor',
+      render: (value) => (
+        <div className="text-sm font-medium text-gray-900">{value?.companyName || '-'}</div>
+      )
+    },
+    {
+      key: 'contactName',
+      header: 'Contact Name',
+      render: (value) => (
+        <div className="text-sm text-gray-900">{value || '-'}</div>
+      )
+    },
+    {
+      key: 'email',
+      header: 'Email',
+      render: (value) => (
+        <div className="text-sm text-gray-900">{value || '-'}</div>
+      )
+    },
+    {
+      key: 'phone',
+      header: 'Phone',
+      render: (value) => (
+        <div className="text-sm text-gray-900">{value || '-'}</div>
+      )
+    },
+    {
+      key: 'designation',
+      header: 'Designation',
+      render: (value) => (
+        <div className="text-sm text-gray-900">{value || '-'}</div>
+      )
+    },
+    {
+      key: 'isPrimary',
+      header: 'Primary Contact',
+      render: (value) => (
+        <span className={`px-2 py-1 rounded-full text-xs font-medium ${value ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+          {value ? 'Yes' : 'No'}
+        </span>
+      )
+    }
+  ];
 
   useEffect(() => {
-    fetchContacts();
+    fetchVendorContacts();
     fetchVendors();
   }, []);
 
-  const fetchContacts = async () => {
+  // Reset pagination when search term changes
+  useEffect(() => {
+    resetToFirstPage();
+  }, [searchTerm, resetToFirstPage]);
+
+  const fetchVendorContacts = async () => {
     try {
       const response = await axios.get('/vendor-contacts');
       console.log('Vendor contacts response:', response.data);
       // Ensure we always set an array
       const contactsData = Array.isArray(response.data) ? response.data : [];
-      setContacts(contactsData);
+      setVendorContacts(contactsData);
     } catch (error) {
       console.error('Error fetching vendor contacts:', error);
-      setContacts([]); // Ensure contacts is always an array
+      setVendorContacts([]); // Ensure contacts is always an array
       showErrorModal('Error', getErrorMessage(error, 'Failed to fetch vendor contacts'), getErrorType(error));
     } finally {
       setLoading(false);
@@ -60,8 +143,8 @@ const VendorContacts = () => {
   };
 
   const handleDelete = async (id) => {
-    const contact = contacts.find(c => c.id === id);
-    const message = `Are you sure you want to delete the contact "${contact?.name}"? This action cannot be undone.`;
+    const contact = vendorContacts.find(c => c.id === id);
+    const message = `Are you sure you want to delete the contact "${contact?.contactName}"? This action cannot be undone.`;
     
     showConfirmModal(
       'Delete Vendor Contact',
@@ -72,7 +155,8 @@ const VendorContacts = () => {
           const response = await axios.delete(`/vendor-contacts/${id}`);
           console.log('Delete response:', response.data);
           showErrorModal('Success', 'Vendor contact deleted successfully!', 'success');
-          fetchContacts();
+          fetchVendorContacts();
+          resetToFirstPage(); // Reset pagination after deletion
         } catch (error) {
           console.error('Error deleting vendor contact:', error);
           console.error('Error response:', error.response?.data);
@@ -100,6 +184,54 @@ const VendorContacts = () => {
     );
   };
 
+  const handlePrint = (contact) => {
+    // Create a new window for printing
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Vendor Contact - ${contact.contactName}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; margin-bottom: 30px; }
+            .contact-details { margin-bottom: 20px; }
+            .vendor-details { margin-bottom: 20px; }
+            .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #666; }
+            @media print { body { margin: 0; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>VENDOR CONTACT</h1>
+            <h2>${contact.contactName}</h2>
+          </div>
+          
+          <div class="contact-details">
+            <p><strong>Contact Name:</strong> ${contact.contactName}</p>
+            <p><strong>Email:</strong> ${contact.email}</p>
+            <p><strong>Phone:</strong> ${contact.phone}</p>
+            <p><strong>Designation:</strong> ${contact.designation || 'N/A'}</p>
+            <p><strong>Primary Contact:</strong> ${contact.isPrimary ? 'Yes' : 'No'}</p>
+          </div>
+          
+          <div class="vendor-details">
+            <h3>Vendor Company:</h3>
+            <p><strong>${contact.vendor?.companyName || 'N/A'}</strong></p>
+            <p>${contact.vendor?.address || 'N/A'}</p>
+            <p>${contact.vendor?.city || ''}, ${contact.vendor?.state || ''} ${contact.vendor?.pinCode || ''}</p>
+          </div>
+          
+          <div class="footer">
+            <p>This is a vendor contact information document</p>
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     console.log('Submitting vendor contact data:', formData);
@@ -116,7 +248,8 @@ const VendorContacts = () => {
       setShowModal(false);
       setEditingContact(null);
       resetForm();
-      fetchContacts();
+      fetchVendorContacts();
+      resetToFirstPage(); // Reset pagination after data change
     } catch (error) {
       console.error('Error saving vendor contact:', error);
       console.error('Error response:', error.response?.data);
@@ -128,9 +261,11 @@ const VendorContacts = () => {
     setEditingContact(contact);
     setFormData({
       vendorId: contact.vendorId.toString(),
-      name: contact.name,
+      contactName: contact.contactName,
+      email: contact.email,
       phone: contact.phone,
-      email: contact.email
+      designation: contact.designation,
+      isPrimary: contact.isPrimary
     });
     setShowModal(true);
   };
@@ -138,25 +273,13 @@ const VendorContacts = () => {
   const resetForm = () => {
     setFormData({
       vendorId: '',
-      name: '',
+      contactName: '',
+      email: '',
       phone: '',
-      email: ''
+      designation: '',
+      isPrimary: false
     });
   };
-
-  const filteredContacts = (() => {
-    // Ensure contacts is always an array
-    const contactsArray = Array.isArray(contacts) ? contacts : [];
-    console.log('Contacts state:', contacts);
-    console.log('Contacts type:', typeof contacts);
-    console.log('ContactsArray:', contactsArray);
-    return contactsArray.filter(contact =>
-      contact.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contact.vendor?.companyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contact.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contact.phone.includes(searchTerm)
-    );
-  })();
 
   if (loading) {
     return (
@@ -175,87 +298,66 @@ const VendorContacts = () => {
 
   return (
     <div className="p-8">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Vendor Contacts</h1>
-          <p className="text-gray-600">Manage your vendor contacts</p>
-        </div>
-        <button 
-          onClick={() => {
-            console.log('Opening modal for new vendor contact');
-            setShowModal(true);
-          }}
-          className="btn btn-primary"
-        >
-          <span className="mr-2">➕</span>
-          Add Contact
-        </button>
-      </div>
+      {/* Header */}
+      <PageHeader
+        title="Vendor Contacts"
+        subtitle="Manage your vendor contacts"
+        actionButton={
+          <ActionButton
+            onClick={() => {
+              console.log('Opening modal for new vendor contact');
+              setShowModal(true);
+            }}
+            variant="primary"
+            size="lg"
+            icon={
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+            }
+          >
+            Add Contact
+          </ActionButton>
+        }
+      />
 
-      <div className="mb-6">
-        <input
-          type="text"
-          placeholder="Search contacts..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="form-input w-full md:w-1/3"
-        />
-      </div>
+      {/* Search */}
+      <SearchBar
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        placeholder="Search by contact name, vendor, email, phone, or designation..."
+        label="Search Vendor Contacts"
+      />
 
-      <div className="card">
-        <div className="card-content">
-          {filteredContacts.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Contact Name</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Vendor</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Phone</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Email</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredContacts.map((contact) => (
-                    <tr key={contact.id} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4 font-medium">{contact.name}</td>
-                      <td className="py-3 px-4">{contact.vendor?.companyName || 'N/A'}</td>
-                      <td className="py-3 px-4">{contact.phone}</td>
-                      <td className="py-3 px-4">{contact.email}</td>
-                      <td className="py-3 px-4">
-                        <div className="flex space-x-2">
-                          <button 
-                            className="text-blue-600 hover:text-blue-800"
-                            onClick={() => handleEdit(contact)}
-                          >
-                            ✏️
-                          </button>
-                          <button className="text-green-600 hover:text-green-800">📄</button>
-                          <button
-                            onClick={() => {
-                              console.log('Delete button clicked for vendor contact ID:', contact.id);
-                              handleDelete(contact.id);
-                            }}
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <span className="text-4xl mb-4 block">🏢</span>
-              <p>No vendor contacts found</p>
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Results Summary */}
+      <ResultsSummary
+        totalItems={totalItems}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        searchTerm={searchTerm}
+        itemName="vendor contact"
+      />
+
+      {/* Vendor Contacts Table */}
+      <DataTable
+        columns={columns}
+        data={paginatedVendorContacts}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        onPrint={handlePrint}
+        emptyMessage="No vendor contacts found"
+        emptyIcon="📞"
+      />
+
+      {/* Pagination */}
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={handlePageChange}
+        totalItems={totalItems}
+        itemsPerPage={itemsPerPage}
+        onItemsPerPageChange={handleItemsPerPageChange}
+      />
 
       {/* Modal */}
       {showModal && (
@@ -301,11 +403,23 @@ const VendorContacts = () => {
                     <label className="form-label">Contact Name *</label>
                     <input
                       type="text"
-                      name="name"
-                      value={formData.name}
-                      onChange={(e) => setFormData({...formData, name: e.target.value})}
+                      name="contactName"
+                      value={formData.contactName}
+                      onChange={(e) => setFormData({...formData, contactName: e.target.value})}
                       className="form-input"
                       placeholder="Contact person name"
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Email *</label>
+                    <input
+                      type="email"
+                      name="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({...formData, email: e.target.value})}
+                      className="form-input"
+                      placeholder="Email address"
                       required
                     />
                   </div>
@@ -322,32 +436,42 @@ const VendorContacts = () => {
                     />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Email *</label>
+                    <label className="form-label">Designation</label>
                     <input
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({...formData, email: e.target.value})}
+                      type="text"
+                      name="designation"
+                      value={formData.designation}
+                      onChange={(e) => setFormData({...formData, designation: e.target.value})}
                       className="form-input"
-                      placeholder="Email address"
-                      required
+                      placeholder="Contact designation"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Primary Contact</label>
+                    <input
+                      type="checkbox"
+                      name="isPrimary"
+                      checked={formData.isPrimary}
+                      onChange={(e) => setFormData({...formData, isPrimary: e.target.checked})}
+                      className="form-checkbox"
                     />
                   </div>
                 </div>
                 <div className="flex justify-end space-x-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowModal(false);
-                      resetForm();
-                    }}
-                    className="btn btn-secondary"
+                  <ActionButton
+                    onClick={() => setShowModal(false)}
+                    variant="secondary"
+                    size="md"
                   >
                     Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary">
-                    {editingContact ? 'Update' : 'Add'} Contact
-                  </button>
+                  </ActionButton>
+                  <ActionButton
+                    type="submit"
+                    variant="primary"
+                    size="md"
+                  >
+                    {editingContact ? 'Update Contact' : 'Create Contact'}
+                  </ActionButton>
                 </div>
               </form>
             </div>

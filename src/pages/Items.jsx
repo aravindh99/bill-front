@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import ModernModal from '../components/ModernModal';
 import ConfirmModal from '../components/ConfirmModal';
+import Pagination from '../components/Pagination';
+import usePagination from '../hooks/usePagination';
 import { formatRelatedRecords, getErrorMessage, getErrorType } from '../utils/errorHelpers.jsx';
+import ActionButton from '../components/ActionButton';
 
 const Items = () => {
   const [items, setItems] = useState([]);
@@ -31,9 +34,33 @@ const Items = () => {
     purchaseCess: ''
   });
 
+  // Filter items based on search term
+  const filteredItems = items.filter(item =>
+    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    item.description?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Use pagination hook with filtered data
+  const {
+    currentData: paginatedItems,
+    totalItems,
+    totalPages,
+    currentPage,
+    itemsPerPage,
+    handlePageChange,
+    handleItemsPerPageChange,
+    resetToFirstPage
+  } = usePagination(filteredItems, 25);
+
   useEffect(() => {
     fetchItems();
   }, []);
+
+  // Reset pagination when search term changes
+  useEffect(() => {
+    resetToFirstPage();
+  }, [searchTerm, resetToFirstPage]);
 
   const fetchItems = async () => {
     try {
@@ -72,6 +99,7 @@ const Items = () => {
       setEditingItem(null);
       resetForm();
       fetchItems();
+      resetToFirstPage(); // Reset pagination after data change
     } catch (error) {
       console.error('Error saving item:', error);
       console.error('Error response:', error.response?.data);
@@ -103,44 +131,64 @@ const Items = () => {
   };
 
   const handleDelete = async (id) => {
-    const item = items.find(i => i.id === id);
-    const message = `Are you sure you want to delete the item "${item?.name}"? This action cannot be undone.`;
-    
     showConfirmModal(
       'Delete Item',
-      message,
+      'Are you sure you want to delete this item? This action cannot be undone.',
       async () => {
         try {
-          console.log('Deleting item with ID:', id);
-          const response = await axios.delete(`/items/${id}`);
-          console.log('Delete response:', response.data);
+          await axios.delete(`/items/${id}`);
           showErrorModal('Success', 'Item deleted successfully!', 'success');
           fetchItems();
+          resetToFirstPage(); // Reset pagination after deletion
         } catch (error) {
           console.error('Error deleting item:', error);
-          console.error('Error response:', error.response?.data);
-          
-          let message = getErrorMessage(error, 'Error deleting item');
-          
-          // If there are related records, show them in the modal
-          if (error.response?.data?.relatedRecords) {
-            const relatedRecordsComponent = formatRelatedRecords(error.response.data.relatedRecords);
-            showErrorModal(
-              'Cannot Delete Item',
-              message,
-              'warning'
-            );
-            // We'll handle the related records in the modal children
-            setErrorModal(prev => ({
-              ...prev,
-              children: relatedRecordsComponent
-            }));
-          } else {
-            showErrorModal('Error', message, getErrorType(error));
-          }
+          showErrorModal('Error', getErrorMessage(error, 'Failed to delete item'), getErrorType(error));
         }
       }
     );
+  };
+
+  const handlePrint = (item) => {
+    // Create a new window for printing
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Item - ${item.name}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; margin-bottom: 30px; }
+            .item-details { margin-bottom: 20px; }
+            .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #666; }
+            @media print { body { margin: 0; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>ITEM DETAILS</h1>
+            <h2>${item.name}</h2>
+          </div>
+          
+          <div class="item-details">
+            <p><strong>Item Name:</strong> ${item.name}</p>
+            <p><strong>SKU:</strong> ${item.sku}</p>
+            <p><strong>Type:</strong> ${item.type}</p>
+            <p><strong>Unit:</strong> ${item.unit}</p>
+            <p><strong>Price:</strong> ₹${item.price}</p>
+            <p><strong>Description:</strong> ${item.description || 'N/A'}</p>
+            <p><strong>Category:</strong> ${item.category || 'N/A'}</p>
+            <p><strong>Stock:</strong> ${item.stock || 0}</p>
+          </div>
+          
+          <div class="footer">
+            <p>This is an item information document</p>
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
   };
 
   const resetForm = () => {
@@ -163,12 +211,6 @@ const Items = () => {
       purchaseCess: ''
     });
   };
-
-  const filteredItems = items.filter(item =>
-    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.description?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
 
   const formatCurrency = (amount, currency = 'INR') => {
     return new Intl.NumberFormat('en-IN', {
@@ -196,106 +238,147 @@ const Items = () => {
   return (
     <div className="p-8">
       {/* Header */}
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Items</h1>
-          <p className="text-gray-600">Manage your products and services</p>
+          <p className="text-gray-600 mt-2">Manage your inventory items</p>
         </div>
         <button
-          onClick={() => {
-            console.log('Opening modal for new item');
-            setShowModal(true);
-          }}
-          className="btn btn-primary"
+          onClick={() => setShowModal(true)}
+          className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center gap-2"
         >
-          <span className="mr-2">➕</span>
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+          </svg>
           Add Item
         </button>
       </div>
 
-      {/* Search */}
-      <div className="mb-6">
-        <input
-          type="text"
-          placeholder="Search items..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="form-input w-full md:w-1/3"
-        />
+      {/* Search and Filters */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-1">
+            <label htmlFor="search" className="block text-sm font-medium text-gray-700 mb-2">
+              Search Items
+            </label>
+            <input
+              type="text"
+              id="search"
+              placeholder="Search by name, SKU, or description..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Results Summary */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+          <div className="text-sm text-gray-600">
+            Found {totalItems} item{totalItems !== 1 ? 's' : ''}
+            {searchTerm && ` matching "${searchTerm}"`}
+          </div>
+          <div className="text-sm text-gray-600">
+            Page {currentPage} of {totalPages}
+          </div>
+        </div>
       </div>
 
       {/* Items Table */}
-      <div className="card">
-        <div className="card-content">
-          {filteredItems.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Item</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">SKU</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Type</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Sales Price</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Purchase Price</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredItems.map((item) => (
-                    <tr key={item.id} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4">
-                        <div>
-                          <div className="font-medium">{item.name}</div>
-                          {item.description && (
-                            <div className="text-sm text-gray-500">{item.description}</div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 font-mono">{item.sku}</td>
-                      <td className="py-3 px-4">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          item.type === 'product' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
-                        }`}>
-                          {item.type}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 font-medium">
-                        {formatCurrency(item.salesUnitPrice, item.salesCurrency)}
-                      </td>
-                      <td className="py-3 px-4 font-medium">
-                        {formatCurrency(item.purchaseUnitPrice, item.purchaseCurrency)}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => handleEdit(item)}
-                            className="text-blue-600 hover:text-blue-800"
-                          >
-                            ✏️
-                          </button>
-                          <button
-                            onClick={() => {
-                              console.log('Delete button clicked for item ID:', item.id);
-                              handleDelete(item.id);
-                            }}
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <span className="text-4xl mb-4 block">📦</span>
-              <p>No items found</p>
-            </div>
-          )}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Item Details
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  SKU/Code
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Type
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Unit
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Opening Qty
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Sales Price
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {paginatedItems.map((item) => (
+                <tr key={item.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">{item.name}</div>
+                      {item.description && (
+                        <div className="text-sm text-gray-500">{item.description}</div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <div>
+                      <div className="font-medium">{item.sku || '-'}</div>
+                      {item.code && <div className="text-xs text-gray-500">{item.code}</div>}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      item.type === 'product' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                    }`}>
+                      {item.type}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {item.unit || '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {item.openingQuantity || '0'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {item.salesUnitPrice ? formatCurrency(item.salesUnitPrice, item.salesCurrency) : '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleEdit(item)}
+                        className="text-blue-600 hover:text-blue-900 transition-colors duration-200"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(item.id)}
+                        className="text-red-600 hover:text-red-900 transition-colors duration-200"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
+
+        {/* Pagination */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={handlePageChange}
+          totalItems={totalItems}
+          itemsPerPage={itemsPerPage}
+          onItemsPerPageChange={handleItemsPerPageChange}
+        />
       </div>
 
       {/* Modal */}
@@ -424,20 +507,24 @@ const Items = () => {
                   />
                 </div>
                 <div className="flex justify-end space-x-3 pt-4">
-                  <button
-                    type="button"
+                  <ActionButton
                     onClick={() => {
                       setShowModal(false);
                       setEditingItem(null);
                       resetForm();
                     }}
-                    className="btn btn-secondary"
+                    variant="secondary"
+                    size="md"
                   >
                     Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary">
-                    {editingItem ? 'Update' : 'Create'} Item
-                  </button>
+                  </ActionButton>
+                  <ActionButton
+                    type="submit"
+                    variant="primary"
+                    size="md"
+                  >
+                    {editingItem ? 'Update Item' : 'Create Item'}
+                  </ActionButton>
                 </div>
               </form>
             </div>

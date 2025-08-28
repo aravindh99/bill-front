@@ -2,6 +2,13 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import ModernModal from '../components/ModernModal';
 import ConfirmModal from '../components/ConfirmModal';
+import Pagination from '../components/Pagination';
+import usePagination from '../hooks/usePagination';
+import DataTable from '../components/DataTable';
+import SearchBar from '../components/SearchBar';
+import PageHeader from '../components/PageHeader';
+import ActionButton from '../components/ActionButton';
+import ResultsSummary from '../components/ResultsSummary';
 import { formatRelatedRecords, getErrorMessage, getErrorType } from '../utils/errorHelpers.jsx';
 
 const Vendors = () => {
@@ -24,9 +31,68 @@ const Vendors = () => {
     billingAddress: ''
   });
 
+  // Filter vendors based on search term
+  const filteredVendors = vendors.filter(vendor =>
+    vendor.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    vendor.contactName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    vendor.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    vendor.phone?.includes(searchTerm)
+  );
+
+  // Use pagination hook with filtered data
+  const {
+    currentData: paginatedVendors,
+    totalItems,
+    totalPages,
+    currentPage,
+    itemsPerPage,
+    handlePageChange,
+    handleItemsPerPageChange,
+    resetToFirstPage
+  } = usePagination(filteredVendors, 25);
+
+  // Table columns configuration
+  const columns = [
+    {
+      key: 'companyName',
+      header: 'Company',
+      render: (value, row) => (
+        <div>
+          <div className="text-sm font-medium text-gray-900">{value}</div>
+          {row.city && <div className="text-sm text-gray-500">{row.city}</div>}
+        </div>
+      )
+    },
+    {
+      key: 'contactName',
+      header: 'Contact'
+    },
+    {
+      key: 'email',
+      header: 'Email'
+    },
+    {
+      key: 'phone',
+      header: 'Phone'
+    },
+    {
+      key: 'city',
+      header: 'City'
+    },
+    {
+      key: 'gstin',
+      header: 'GSTIN'
+    }
+  ];
+
   useEffect(() => {
     fetchVendors();
   }, []);
+
+  // Reset pagination when search term changes
+  useEffect(() => {
+    resetToFirstPage();
+  }, [searchTerm, resetToFirstPage]);
 
   const fetchVendors = async () => {
     try {
@@ -65,6 +131,7 @@ const Vendors = () => {
       setEditingVendor(null);
       resetForm();
       fetchVendors();
+      resetToFirstPage(); // Reset pagination after data change
     } catch (error) {
       console.error('Error saving vendor:', error);
       console.error('Error response:', error.response?.data);
@@ -101,6 +168,7 @@ const Vendors = () => {
           console.log('Delete response:', response.data);
           showErrorModal('Success', 'Vendor deleted successfully!', 'success');
           fetchVendors();
+          resetToFirstPage(); // Reset pagination after deletion
         } catch (error) {
           console.error('Error deleting vendor:', error);
           console.error('Error response:', error.response?.data);
@@ -142,11 +210,6 @@ const Vendors = () => {
     });
   };
 
-  const filteredVendors = vendors.filter(vendor =>
-    vendor.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    vendor.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   if (loading) {
     return (
       <div className="p-8">
@@ -165,83 +228,62 @@ const Vendors = () => {
 
   return (
     <div className="p-8">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Vendors</h1>
-          <p className="text-gray-600">Manage your vendors and suppliers</p>
-        </div>
-        <button 
-          onClick={() => {
-            console.log('Opening modal for new vendor');
-            setShowModal(true);
-          }}
-          className="btn btn-primary"
-        >
-          <span className="mr-2">➕</span>
-          Add Vendor
-        </button>
-      </div>
+      {/* Header */}
+      <PageHeader
+        title="Vendors"
+        subtitle="Manage your vendor relationships"
+        actionButton={
+          <ActionButton
+            onClick={() => setShowModal(true)}
+            variant="primary"
+            size="lg"
+            icon={
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+            }
+          >
+            Add Vendor
+          </ActionButton>
+        }
+      />
 
-      <div className="mb-6">
-        <input
-          type="text"
-          placeholder="Search vendors..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="form-input w-full md:w-1/3"
-        />
-      </div>
+      {/* Search */}
+      <SearchBar
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        placeholder="Search by company name, contact, email, or phone..."
+        label="Search Vendors"
+      />
 
-      <div className="card">
-        <div className="card-content">
-          {filteredVendors.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Company</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Contact</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Email</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Phone</th>
-                    <th className="text-left py-3 px-4 font-bold text-lg text-gray-800">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredVendors.map((vendor) => (
-                    <tr key={vendor.id} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4 font-medium">{vendor.companyName}</td>
-                      <td className="py-3 px-4">{vendor.contactName}</td>
-                      <td className="py-3 px-4">{vendor.email}</td>
-                      <td className="py-3 px-4">{vendor.phone}</td>
-                      <td className="py-3 px-4">
-                        <div className="flex space-x-2">
-                          <button 
-                            onClick={() => handleEdit(vendor)}
-                            className="text-blue-600 hover:text-blue-800"
-                          >
-                            ✏️
-                          </button>
-                          <button 
-                            onClick={() => handleDelete(vendor.id)}
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <span className="text-4xl mb-4 block">🏢</span>
-              <p>No vendors found</p>
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Results Summary */}
+      <ResultsSummary
+        totalItems={totalItems}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        searchTerm={searchTerm}
+        itemName="vendor"
+      />
+
+      {/* Vendors Table */}
+      <DataTable
+        columns={columns}
+        data={paginatedVendors}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        emptyMessage="No vendors found"
+        emptyIcon="🏢"
+      />
+
+      {/* Pagination */}
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={handlePageChange}
+        totalItems={totalItems}
+        itemsPerPage={itemsPerPage}
+        onItemsPerPageChange={handleItemsPerPageChange}
+      />
 
       {/* Modal */}
       {showModal && (
@@ -352,20 +394,24 @@ const Vendors = () => {
                   />
                 </div>
                 <div className="flex justify-end space-x-3 pt-4">
-                  <button
-                    type="button"
+                  <ActionButton
                     onClick={() => {
                       setShowModal(false);
                       setEditingVendor(null);
                       resetForm();
                     }}
-                    className="btn btn-secondary"
+                    variant="secondary"
+                    size="md"
                   >
                     Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary">
-                    {editingVendor ? 'Update' : 'Create'} Vendor
-                  </button>
+                  </ActionButton>
+                  <ActionButton
+                    type="submit"
+                    variant="primary"
+                    size="md"
+                  >
+                    {editingVendor ? 'Update Vendor' : 'Create Vendor'}
+                  </ActionButton>
                 </div>
               </form>
             </div>
